@@ -112,6 +112,10 @@ impl CycleDetection {
         }
         v
     }
+
+    fn history(&self) -> impl Iterator<Item = u128> {
+        self.history.clone().into_iter().rev()
+    }
 }
 
 pub struct Inner<'cx> {
@@ -406,7 +410,27 @@ impl<'cx> Context<'cx> {
             .cycle_detection
             .push_is_cycle(input_hash)
         {
-            panic!("cycle detected");
+            let mut data = Vec::new();
+            let inner = self.inner.borrow();
+
+            if let Some(i) = inner.lookup.get(&input_hash) {
+                let instance = &inner.get_node(*i).query_instance;
+                data.push(format!("running query {instance}"));
+            } else {
+                data.push(format!("running query {}", Q::NAME));
+            }
+
+            let mut idx = 0;
+            for i in inner.cycle_detection.history() {
+                idx += 1;
+                if let Some(i) = inner.lookup.get(&i) {
+                    let instance = &inner.get_node(*i).query_instance;
+                    data.push(format!("{idx}. query {instance}"));
+                } else {
+                    data.push(format!("{idx}. query with hash `{i}`"));
+                }
+            }
+            panic!("cycle detected {}", data.join("\n"));
         }
 
         let node = if let Some(node) = self.is_cached(input_hash) {
@@ -454,9 +478,7 @@ mod tests {
 
     use super::CycleDetection;
 
-    #[test]
-    fn test_cycle() {
-        let mut c = CycleDetection::new();
+    fn cycle(mut c: CycleDetection) {
         assert!(!c.push_is_cycle(1));
         assert!(!c.push_is_cycle(2));
         assert!(!c.push_is_cycle(3));
@@ -465,6 +487,12 @@ mod tests {
         assert!(c.push_is_cycle(3));
         c.pop();
         assert!(!c.push_is_cycle(3));
+    }
+
+    #[test]
+    fn test_cycle() {
+        let c = CycleDetection::new();
+        cycle(c);
     }
 
     #[test]
@@ -477,6 +505,11 @@ mod tests {
         assert!(c.push_is_cycle(NO_HASHSET_LEN as u128 + 9));
         c.pop();
         assert!(!c.push_is_cycle(NO_HASHSET_LEN as u128 + 9));
+        for _ in 0..(NO_HASHSET_LEN + 9) {
+            c.pop();
+        }
+
+        cycle(c);
     }
 
     #[test]

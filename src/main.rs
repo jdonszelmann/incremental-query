@@ -405,4 +405,40 @@ mod tests {
         let ctx = Context::new(&storage);
         ctx.query(cyclic, (10,));
     }
+
+    #[test]
+    // #[should_panic]
+    fn long_cycle() {
+        define_query! {
+            fn e<'cx>(ctx: &Context<'cx>, r: &u64) -> bool {
+              *ctx.query(a, (*r,))
+            }
+        }
+        define_query! {
+            fn d<'cx>(ctx: &Context<'cx>, r: &u64) -> bool {
+              *ctx.query(e, (*r,))
+            }
+        }
+        define_query! {
+            fn c<'cx>(ctx: &Context<'cx>, r: &u64) -> bool {
+              *ctx.query(d, (*r,))
+            }
+        }
+        define_query! {
+            fn b<'cx>(ctx: &Context<'cx>, r: &u64) -> bool {
+              *ctx.query(c, (*r,))
+            }
+        }
+        define_query! {
+            fn a<'cx>(ctx: &Context<'cx>, r: &u64) -> bool {
+              *ctx.query(b, (*r,))
+            }
+        }
+        log();
+
+
+        let storage = Storage::new();
+        let ctx = Context::new(&storage);
+        ctx.query(a, (10,));
+    }
 }
