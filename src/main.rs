@@ -1,6 +1,8 @@
 #![feature(macro_metavar_expr)]
 
-use incremental::{context::Context, query_parameter::QueryParameter, storage::Storage, QueryHasher};
+use incremental::{
+    context::Context, query_parameter::QueryParameter, storage::Storage, QueryHasher,
+};
 use tracing_subscriber::EnvFilter;
 
 #[macro_use]
@@ -28,17 +30,27 @@ fn main() {
 
     let storage = Storage::new();
     let ctx = Context::new(&storage);
-    ctx.query( compile, (config,));
+    ctx.query(compile, (config,));
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::{Cell, RefCell}, collections::VecDeque, hash::Hash, rc::Rc};
+    use std::{
+        cell::{Cell, RefCell},
+        collections::VecDeque,
+        hash::Hash,
+        rc::Rc,
+    };
     use tracing_subscriber::EnvFilter;
 
+    use crate::incremental::{
+        context::Context,
+        query::{Query, QueryMode},
+        query_parameter::QueryParameter,
+        storage::Storage,
+        QueryHasher,
+    };
     use rand::{thread_rng, Rng};
-    use crate::incremental::{ context::Context, query::{Query, QueryMode}, query_parameter::QueryParameter, storage::Storage, QueryHasher};
-
 
     #[derive(Clone)]
     struct Counter(pub u64, Rc<Cell<usize>>);
@@ -80,7 +92,7 @@ mod tests {
         fn next(&self) -> T {
             self.data.borrow_mut().pop_front().expect("empty")
         }
-    } 
+    }
 
     impl QueryParameter for Counter {
         fn hash_stable(&self, hasher: &mut QueryHasher) {
@@ -118,13 +130,13 @@ mod tests {
 
         let ctr = Counter::new(0);
         let ctx = Context::new(&storage);
-        ctx.query( test, (ctr.clone(),));
+        ctx.query(test, (ctr.clone(),));
         assert_eq!(ctr.get(), 1);
     }
 
     #[test]
     fn call_twice() {
-       define_query! {
+        define_query! {
             fn called_twice<'cx>(_ctx: &Context<'cx>, input: &Counter) -> () {
                input.add();
             }
@@ -144,7 +156,7 @@ mod tests {
     #[test]
     fn impure_flag() {
         define_query! {
-            #[rerun(always)] 
+            #[rerun(always)]
             fn always<'cx>(_ctx: &Context<'cx>, _inp: &()) -> () {}
         }
         define_query! {
@@ -164,7 +176,7 @@ mod tests {
     #[test]
     fn impure_rerun() {
         define_query! {
-            #[rerun(always)] 
+            #[rerun(always)]
             fn random<'cx>(_ctx: &Context<'cx>,) -> u64 {
                 thread_rng().gen_range(0..u64::MAX)
             }
@@ -225,8 +237,14 @@ mod tests {
         let counter2 = Counter::new(2);
         let ctx = Context::new(&storage);
 
-        ctx.query(some_other_query, (order.clone(), counter1.clone(), counter2.clone()));
-        ctx.query(some_other_query, (order.clone(), counter1.clone(), counter2.clone()));
+        ctx.query(
+            some_other_query,
+            (order.clone(), counter1.clone(), counter2.clone()),
+        );
+        ctx.query(
+            some_other_query,
+            (order.clone(), counter1.clone(), counter2.clone()),
+        );
 
         assert!(order.is_empty());
         assert_eq!(counter1.get(), 1);
@@ -266,10 +284,15 @@ mod tests {
         let counter2 = Counter::new(2);
         let ctx = Context::new(&storage);
 
-        ctx.query(some_other_query, (order.clone(), counter1.clone(), counter2.clone()));
+        ctx.query(
+            some_other_query,
+            (order.clone(), counter1.clone(), counter2.clone()),
+        );
         ctx.next_generation();
-        tracing::info!("gen");
-        ctx.query(some_other_query, (order.clone(), counter1.clone(), counter2.clone()));
+        ctx.query(
+            some_other_query,
+            (order.clone(), counter1.clone(), counter2.clone()),
+        );
 
         assert!(order.is_empty());
         assert_eq!(counter1.get(), 1);
@@ -308,8 +331,14 @@ mod tests {
         let counter2 = Counter::new(2);
         let ctx = Context::new(&storage);
 
-        ctx.query(some_other_query, (order.clone(), counter1.clone(), counter2.clone()));
-        ctx.query(some_other_query, (order.clone(), counter1.clone(), counter2.clone()));
+        ctx.query(
+            some_other_query,
+            (order.clone(), counter1.clone(), counter2.clone()),
+        );
+        ctx.query(
+            some_other_query,
+            (order.clone(), counter1.clone(), counter2.clone()),
+        );
 
         assert!(!order.is_empty());
         assert_eq!(counter1.get(), 1);
@@ -325,12 +354,12 @@ mod tests {
             }
         }
         define_query!(
-            fn one<'cx>(_ctx: &Context<'cx>,) -> u64  {
+            fn one<'cx>(_ctx: &Context<'cx>,) -> u64 {
                 1
             }
         );
         define_query!(
-            fn two<'cx>(_ctx: &Context<'cx>, c: &Counter) -> u64  {
+            fn two<'cx>(_ctx: &Context<'cx>, c: &Counter) -> u64 {
                 c.add();
                 2
             }
@@ -352,12 +381,28 @@ mod tests {
         let counter = Counter::new(0);
         let ctx = Context::new(&storage);
 
-        assert_eq!(ctx.query(conditional, (order.clone(),counter.clone())), &1);
+        assert_eq!(ctx.query(conditional, (order.clone(), counter.clone())), &1);
         ctx.next_generation();
-        assert_eq!(ctx.query(conditional, (order.clone(),counter.clone())), &2);
-        assert_eq!(ctx.query(conditional, (order.clone(),counter.clone())), &2);
-        assert_eq!(ctx.query(conditional, (order.clone(),counter.clone())), &2);
+        assert_eq!(ctx.query(conditional, (order.clone(), counter.clone())), &2);
+        assert_eq!(ctx.query(conditional, (order.clone(), counter.clone())), &2);
+        assert_eq!(ctx.query(conditional, (order.clone(), counter.clone())), &2);
         assert_eq!(counter.get(), 1);
         assert!(order.is_empty())
+    }
+
+    #[test]
+    #[should_panic]
+    fn cycle() {
+        define_query! {
+            fn cyclic<'cx>(ctx: &Context<'cx>, r: &u64) -> bool {
+              *ctx.query(cyclic, (*r,))
+            }
+        }
+
+        log();
+
+        let storage = Storage::new();
+        let ctx = Context::new(&storage);
+        ctx.query(cyclic, (10,));
     }
 }

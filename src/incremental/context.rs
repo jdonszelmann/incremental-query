@@ -1,4 +1,10 @@
-use std::{any::Any, cell::RefCell, collections::HashMap, hash::Hash, num::NonZeroUsize};
+use std::{
+    any::Any,
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    hash::Hash,
+    num::NonZeroUsize,
+};
 
 use siphasher::sip128::Hasher128;
 use tracing::Level;
@@ -62,6 +68,52 @@ impl OutgoingEdgeIterator {
     }
 }
 
+struct CycleDetection {
+    history: Vec<u128>,
+    lookup: HashSet<u128>,
+}
+const NO_HASHSET_LEN: usize = 10;
+
+impl CycleDetection {
+    pub fn new() -> Self {
+        Self {
+            history: Vec::new(),
+            lookup: HashSet::new(),
+        }
+    }
+
+    pub fn push_is_cycle(&mut self, input_hash: u128) -> bool {
+        if self.lookup.len() < NO_HASHSET_LEN {
+            let cycle = self.history.contains(&input_hash);
+            if !cycle {
+                self.history.push(input_hash);
+            }
+            cycle
+        } else {
+            if self.lookup.is_empty() && NO_HASHSET_LEN > 0 {
+                for &i in &self.history {
+                    self.lookup.insert(i);
+                }
+            }
+
+            let cycle = self.lookup.insert(input_hash);
+            if !cycle {
+                self.history.push(input_hash);
+            }
+
+            cycle
+        }
+    }
+
+    pub fn pop(&mut self) -> u128 {
+        let v = self.history.pop().expect("some value");
+        if !self.lookup.is_empty() && NO_HASHSET_LEN > 0 {
+            assert!(self.lookup.remove(&v));
+        }
+        v
+    }
+}
+
 pub struct Inner<'cx> {
     // index in the nodes array
     curr: Option<usize>,
@@ -71,6 +123,8 @@ pub struct Inner<'cx> {
 
     // map hash to node index
     lookup: HashMap<u128, usize>,
+
+    cycle_detection: CycleDetection,
 
     generation: Generation,
 }
@@ -138,6 +192,7 @@ impl<'cx> Context<'cx> {
                 ],
                 generation: Generation::new(),
                 lookup: HashMap::new(),
+                cycle_detection: CycleDetection::new(),
             }),
         }
     }
@@ -345,6 +400,15 @@ impl<'cx> Context<'cx> {
 
     pub fn query<Q: Query<'cx>>(&self, query: Q, input: Q::Input) -> &'cx Q::Output {
         let input_hash = self.hash(query, &input);
+        if self
+            .inner
+            .borrow_mut()
+            .cycle_detection
+            .push_is_cycle(input_hash)
+        {
+            panic!("cycle detected");
+        }
+
         let node = if let Some(node) = self.is_cached(input_hash) {
             node
         } else {
@@ -378,6 +442,47 @@ impl<'cx> Context<'cx> {
 
         // Safety: we run a type erased query instance, but here we know that the
         // query type of the instance is Q
-        unsafe { self.run_query_instance_of_node(node).get_ref() }
+        let res = unsafe { self.run_query_instance_of_node(node).get_ref() };
+        assert_eq!(self.inner.borrow_mut().cycle_detection.pop(), input_hash);
+        res
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::incremental::context::NO_HASHSET_LEN;
+
+    use super::CycleDetection;
+
+    #[test]
+    fn test_cycle() {
+        let mut c = CycleDetection::new();
+        assert!(!c.push_is_cycle(1));
+        assert!(!c.push_is_cycle(2));
+        assert!(!c.push_is_cycle(3));
+        assert!(c.push_is_cycle(1));
+        assert!(c.push_is_cycle(2));
+        assert!(c.push_is_cycle(3));
+        c.pop();
+        assert!(!c.push_is_cycle(3));
+    }
+
+    #[test]
+    fn test_long() {
+        let mut c = CycleDetection::new();
+        for i in 0..(NO_HASHSET_LEN + 10) {
+            assert!(!c.push_is_cycle(i as u128));
+        }
+        assert!(c.push_is_cycle(1));
+        assert!(c.push_is_cycle(NO_HASHSET_LEN as u128 + 9));
+        c.pop();
+        assert!(!c.push_is_cycle(NO_HASHSET_LEN as u128 + 9));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_empty() {
+        let mut c = CycleDetection::new();
+        c.pop();
     }
 }
