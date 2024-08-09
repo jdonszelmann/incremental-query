@@ -1,6 +1,5 @@
 use std::{any::Any, cell::RefCell, collections::HashMap, hash::Hash, num::NonZeroUsize};
 
-use bumpalo::Bump;
 use siphasher::sip128::Hasher128;
 use tracing::Level;
 
@@ -9,6 +8,7 @@ use crate::incremental::query::{QueryColor, QueryMode};
 use super::{
     query::{Query, QueryInstance},
     query_parameter::{QueryParameter, TypeErasedQueryParam},
+    storage::Storage,
     QueryHasher,
 };
 
@@ -118,13 +118,13 @@ impl<'cx> Inner<'cx> {
 pub struct Context<'cx> {
     inner: RefCell<Inner<'cx>>,
 
-    pub arena: &'cx Bump,
+    pub storage: &'cx Storage,
 }
 
 impl<'cx> Context<'cx> {
-    pub fn new(arena: &'cx Bump) -> Self {
+    pub fn new(storage: &'cx Storage) -> Self {
         Self {
-            arena,
+            storage,
             inner: RefCell::new(Inner {
                 curr: None,
                 nodes: vec![],
@@ -352,7 +352,7 @@ impl<'cx> Context<'cx> {
             // Nodes have a unique input hash. Input hashes also hash the query identifier.
             // A new node represents a new (input, query) pair.
 
-            let input_ref = &*self.arena.alloc(input);
+            let input_ref = &*self.storage.alloc(input);
             let query = QueryInstance {
                 run: Q::get_run_fn(),
                 name: Q::NAME,

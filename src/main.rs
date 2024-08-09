@@ -1,7 +1,6 @@
 #![feature(macro_metavar_expr)]
 
-use bumpalo::Bump;
-use incremental::{context::Context, query_parameter::QueryParameter,  QueryHasher};
+use incremental::{context::Context, query_parameter::QueryParameter, storage::Storage, QueryHasher};
 use tracing_subscriber::EnvFilter;
 
 #[macro_use]
@@ -27,8 +26,8 @@ fn main() {
 
     let config = CompilerConfig {};
 
-    let arena = Bump::new();
-    let ctx = Context::new(&arena);
+    let storage = Storage::new();
+    let ctx = Context::new(&storage);
     ctx.query( compile, (config,));
 }
 
@@ -37,10 +36,8 @@ mod tests {
     use std::{cell::{Cell, RefCell}, collections::VecDeque, hash::Hash, rc::Rc};
     use tracing_subscriber::EnvFilter;
 
-    use bumpalo::Bump;
-
     use rand::{thread_rng, Rng};
-    use crate::incremental::{ context::Context, query::{Query, QueryMode}, query_parameter::QueryParameter,  QueryHasher};
+    use crate::incremental::{ context::Context, query::{Query, QueryMode}, query_parameter::QueryParameter, storage::Storage, QueryHasher};
 
 
     #[derive(Clone)]
@@ -117,10 +114,10 @@ mod tests {
         }
 
         log();
-        let arena = Bump::new();
+        let storage = Storage::new();
 
         let ctr = Counter::new(0);
-        let ctx = Context::new(&arena);
+        let ctx = Context::new(&storage);
         ctx.query( test, (ctr.clone(),));
         assert_eq!(ctr.get(), 1);
     }
@@ -134,10 +131,10 @@ mod tests {
         }
         log();
 
-        let arena = Bump::new();
+        let storage = Storage::new();
 
         let ctr = Counter::new(0);
-        let ctx = Context::new(&arena);
+        let ctx = Context::new(&storage);
 
         ctx.query(called_twice, (ctr.clone(),));
         ctx.query(called_twice, (ctr.clone(),));
@@ -182,10 +179,10 @@ mod tests {
 
         log();
 
-        let arena = Bump::new();
+        let storage = Storage::new();
 
         let ctr = Counter::new(0);
-        let ctx = Context::new(&arena);
+        let ctx = Context::new(&storage);
         ctx.query(depends_on_impure, (ctr.clone(),));
         ctx.query(depends_on_impure, (ctr.clone(),));
 
@@ -216,7 +213,7 @@ mod tests {
         }
         log();
 
-        let arena = Bump::new();
+        let storage = Storage::new();
 
         // note: 2000 is here twice since initvalue is actuall run three times in total.
         // * once for some_other_query's first invocation
@@ -226,7 +223,7 @@ mod tests {
         let order = ReturnInOrder::new(vec![1000, 2000, 2000], 1);
         let counter1 = Counter::new(1);
         let counter2 = Counter::new(2);
-        let ctx = Context::new(&arena);
+        let ctx = Context::new(&storage);
 
         ctx.query(some_other_query, (order.clone(), counter1.clone(), counter2.clone()));
         ctx.query(some_other_query, (order.clone(), counter1.clone(), counter2.clone()));
@@ -260,14 +257,14 @@ mod tests {
         }
         log();
 
-        let arena = Bump::new();
+        let storage = Storage::new();
 
         // now 2000 is there only once because the query is generational, and the first run in the
         // 2nd generation can be cached.
         let order = ReturnInOrder::new(vec![1000, 2000], 1);
         let counter1 = Counter::new(1);
         let counter2 = Counter::new(2);
-        let ctx = Context::new(&arena);
+        let ctx = Context::new(&storage);
 
         ctx.query(some_other_query, (order.clone(), counter1.clone(), counter2.clone()));
         ctx.next_generation();
@@ -302,14 +299,14 @@ mod tests {
         }
         log();
 
-        let arena = Bump::new();
+        let storage = Storage::new();
 
         // now 2000 is there only once because the query is generational, and the first run in the
         // 2nd generation can be cached.
         let order = ReturnInOrder::new(vec![1000, 2000], 1);
         let counter1 = Counter::new(1);
         let counter2 = Counter::new(2);
-        let ctx = Context::new(&arena);
+        let ctx = Context::new(&storage);
 
         ctx.query(some_other_query, (order.clone(), counter1.clone(), counter2.clone()));
         ctx.query(some_other_query, (order.clone(), counter1.clone(), counter2.clone()));
@@ -350,10 +347,10 @@ mod tests {
 
         log();
 
-        let arena = Bump::new();
+        let storage = Storage::new();
         let order = ReturnInOrder::new(vec![true, false], 1);
         let counter = Counter::new(0);
-        let ctx = Context::new(&arena);
+        let ctx = Context::new(&storage);
 
         assert_eq!(ctx.query(conditional, (order.clone(),counter.clone())), &1);
         ctx.next_generation();

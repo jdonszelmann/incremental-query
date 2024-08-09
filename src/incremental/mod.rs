@@ -3,6 +3,7 @@ use siphasher::sip128::SipHasher13;
 pub mod context;
 pub mod query;
 pub mod query_parameter;
+pub mod storage;
 
 pub type QueryHasher = SipHasher13;
 
@@ -65,7 +66,7 @@ macro_rules! define_query {
 
                     let output_hash = cx.hash($name, &output);
                     if should_alloc(output_hash) {
-                        (Some($crate::incremental::query_parameter::TypeErasedQueryParam::new(cx.arena.alloc(output))), output_hash)
+                        (Some($crate::incremental::query_parameter::TypeErasedQueryParam::new(cx.storage.alloc(output))), output_hash)
                     } else {
                         (None, output_hash)
                     }
