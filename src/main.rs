@@ -318,4 +318,49 @@ mod tests {
         assert_eq!(counter1.get(), 1);
         assert_eq!(counter2.get(), 1);
     }
+
+    #[test]
+    fn conditional_query() {
+        define_query! {
+            #[rerun(generation)]
+            fn boolean_query<'cx>(_ctx: &Context<'cx>, r: &ReturnInOrder<bool>) -> bool {
+                r.next()
+            }
+        }
+        define_query!(
+            fn one<'cx>(_ctx: &Context<'cx>,) -> u64  {
+                1
+            }
+        );
+        define_query!(
+            fn two<'cx>(_ctx: &Context<'cx>, c: &Counter) -> u64  {
+                c.add();
+                2
+            }
+        );
+        define_query! {
+            fn conditional<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<bool>, c: &Counter) -> u64 {
+                if *ctx.query(boolean_query, (r.clone(),)) {
+                    *ctx.query(one, ())
+                } else {
+                    *ctx.query(two, (c.clone(),))
+                }
+            }
+        }
+
+        log();
+
+        let arena = Bump::new();
+        let order = ReturnInOrder::new(vec![true, false], 1);
+        let counter = Counter::new(0);
+        let ctx = Context::new(&arena);
+
+        assert_eq!(ctx.query(conditional, (order.clone(),counter.clone())), &1);
+        ctx.next_generation();
+        assert_eq!(ctx.query(conditional, (order.clone(),counter.clone())), &2);
+        assert_eq!(ctx.query(conditional, (order.clone(),counter.clone())), &2);
+        assert_eq!(ctx.query(conditional, (order.clone(),counter.clone())), &2);
+        assert_eq!(counter.get(), 1);
+        assert!(order.is_empty())
+    }
 }
