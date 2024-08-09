@@ -415,9 +415,9 @@ impl<'cx> Context<'cx> {
 
             if let Some(i) = inner.lookup.get(&input_hash) {
                 let instance = &inner.get_node(*i).query_instance;
-                data.push(format!("running query {instance}"));
+                data.push(format!("running query `{}` after running:", instance.name));
             } else {
-                data.push(format!("running query {}", Q::NAME));
+                data.push(format!("running query `{}` after running:", Q::NAME));
             }
 
             let mut idx = 0;
@@ -425,7 +425,7 @@ impl<'cx> Context<'cx> {
                 idx += 1;
                 if let Some(i) = inner.lookup.get(&i) {
                     let instance = &inner.get_node(*i).query_instance;
-                    data.push(format!("{idx}. query {instance}"));
+                    data.push(format!("{idx}. query `{}`", instance.name));
                 } else {
                     data.push(format!("{idx}. query with hash `{i}`"));
                 }
