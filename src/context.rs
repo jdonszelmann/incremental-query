@@ -598,11 +598,11 @@ impl<'cx> Context<'cx> {
     ///
     /// ```rust
     /// # use moment::{Context, define_query, Storage};
-    ///
     /// define_query! {
     ///     fn some_query<'cx>(cx: &Context<'cx>, param1: &u64, param2: &u64, param3: &u64) -> u64 {
     /// #       _ = (param2, param3);
-    ///         *param1
+    /// #       *param1
+    ///         // ...
     ///     }
     /// }
     /// # let (param1, param2, param3) = (1, 2, 3);

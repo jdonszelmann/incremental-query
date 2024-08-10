@@ -20,6 +20,7 @@ pub use query_parameter::TypeErasedQueryParam;
 
 pub type QueryHasher = SipHasher13;
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! parse_attrs {
     (rerun(always) $($rest:tt)*) => {
@@ -51,6 +52,35 @@ macro_rules! tup_or_empty {
     };
 }
 
+/// A macro to define a query. 
+///
+/// A query is a lot like a function, except for the small detail that 
+/// you cannot call it. Instead queries expand to an identifier you can pass 
+/// to a [`Context`](crate::Context) through which you can execute the function.
+///
+/// The following example should illustrate its syntax pretty well:
+///
+/// ```rust
+/// define_query! {
+///     // note: the lifetime <'cx> is required, (though you can choose a different name)
+///     fn some_query<'cx>(
+///         // this first parameter is required! though you can change the name it gets.
+///         cx: &Context<'cx>,
+///         // any number of parameters can follow, but they *must* be of type
+///         // &T where T: QueryParameter.
+///         param1: &u64, param2: &u64, param3: &u64) -> u64 {
+/// #       _ = (param2, param3);
+/// #       *param1
+///         // ...
+///     }
+///
+///     // more queries can follow
+/// }
+/// ```
+///
+/// The output and input of queries are cached, 
+/// and its dependencies are automatically tracked.
+///
 #[macro_export]
 macro_rules! define_query {
     (

@@ -30,7 +30,7 @@ need_stdout = false
 # If the doc compiles, then it opens in your browser and bacon switches
 # to the previous job
 [jobs.doc-open]
-command = ["cargo", "doc", "--color", "always", "--no-deps", "--open"]
+command = ["cargo", "doc", "--color", "always", "--no-deps"]
 need_stdout = false
 on_success = "back"
 
