@@ -15,8 +15,8 @@ pub trait QueryParameter: Sized + Clone + 'static {
     where
         Self: 'cx,
     {
-        fn clone<'cx, 'a, T: QueryParameter>(
-            this: TypeErasedQueryParam<'cx>,
+        fn clone<'a, T: QueryParameter>(
+            this: TypeErasedQueryParam,
             storage: &'a Storage,
         ) -> TypeErasedQueryParam<'a> {
             // safety: T == Self, this clone function clones self
@@ -84,10 +84,11 @@ impl<'cx> TypeErasedQueryParam<'cx> {
         self.ptr
     }
 
-    // Convert this pointer to a query parameter,
-    // into a reference to a concrete query parameter
-    //
-    // Safety: unsound unless T is the original type of this query parameter
+    /// Convert this pointer to a query parameter,
+    /// into a reference to a concrete query parameter
+    ///
+    /// # Safety
+    /// unsound unless T is the original type of this query parameter
     pub unsafe fn get_ref<T>(&self) -> &'cx T {
         &*self.ptr.as_ptr().cast()
     }
