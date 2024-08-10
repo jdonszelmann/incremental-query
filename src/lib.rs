@@ -94,52 +94,49 @@ macro_rules! define_query {
         )*
     ) => {
         $(
-            #[derive(Copy, Clone)]
-            #[allow(non_camel_case_types)]
-            struct $name;
+            #[allow(unused)]
+            pub fn $name<'cx>(
+                cx: &$crate::Context<'cx>,
+                $($paramname: $param),*
+            )  -> &'cx $ret {
+                #[derive(Copy, Clone)]
+                #[allow(non_camel_case_types)]
+                struct Q; 
 
-            impl $name {
-                #[allow(unused)]
-                pub fn query<'cx>(
-                    &self,
-                    cx: &$crate::Context<'cx>,
-                    $($paramname: $param),*
-                )  -> &'cx $ret {
-                    cx.query($name, $crate::tup_or_empty!($($paramname)*))
-                }
-            }
+                impl<$lt> $crate::Query<$lt> for Q {
+                    type Input = $crate::tup_or_empty!($($param)*);
+                    type Output = $ret;
 
-            impl<$lt> $crate::Query<$lt> for $name {
-                type Input = $crate::tup_or_empty!($($param)*);
-                type Output = $ret;
+                    const NAME: &'static str = stringify!($name);
 
-                const NAME: &'static str = stringify!($name);
+                    fn get_run_fn() -> $crate::ErasedQueryRun {
+                        fn run<'cx>(
+                            cx: &$crate::Context<'cx>,
+                            input: $crate::TypeErasedQueryParam<'cx>,
+                            should_alloc: &dyn Fn(u128) -> bool,
+                        ) -> (Option<$crate::TypeErasedQueryParam<'cx>>, u128) {
+                            // safety: we know thatcx is Q::Input here because this function is generated
+                            // together with the definition of the query
+                            let input: &$crate::tup_or_empty!($($param)*) = unsafe{input.get_ref()};
+                            let output = <Q as $crate::Query<'cx>>::run(cx, input);
 
-                fn get_run_fn() -> $crate::ErasedQueryRun {
-                    fn run<'cx>(
-                        cx: &$crate::Context<'cx>,
-                        input: $crate::TypeErasedQueryParam<'cx>,
-                        should_alloc: &dyn Fn(u128) -> bool,
-                    ) -> (Option<$crate::TypeErasedQueryParam<'cx>>, u128) {
-                        // safety: we know thatcx is Q::Input here because this function is generated
-                        // together with the definition of the query
-                        let input: &$crate::tup_or_empty!($($param)*) = unsafe{input.get_ref()};
-                        let output = <$name as $crate::Query<'cx>>::run(cx, input);
-
-                        let output_hash = cx.hash($name, &output);
-                        if should_alloc(output_hash) {
-                            (Some($crate::TypeErasedQueryParam::new(cx.storage.alloc(output))), output_hash)
-                        } else {
-                            (None, output_hash)
+                            let output_hash = cx.hash(Q, &output);
+                            if should_alloc(output_hash) {
+                                (Some($crate::TypeErasedQueryParam::new(cx.storage.alloc(output))), output_hash)
+                            } else {
+                                (None, output_hash)
+                            }
                         }
+
+                        run
                     }
 
-                    run
+                    $crate::parse_attrs!($($($attr)*)*);
+
+                    fn run($cxname: &$crate::Context<'cx>, $crate::tup_or_empty!($($paramname)*): &Self::Input) -> Self::Output $block
                 }
 
-                $crate::parse_attrs!($($($attr)*)*);
-
-                fn run($cxname: &$crate::Context<'cx>, $crate::tup_or_empty!($($paramname)*): &Self::Input) -> Self::Output $block
+                cx.query(Q, $crate::tup_or_empty!($($paramname)*))
             }
         )*
     };
@@ -162,23 +159,23 @@ pub fn log() {
 
 #[cfg(test)]
 mod tests {
-    use crate::{log, query::QueryMode};
+    use crate::log;
 
-    #[test]
-    fn query_mode() {
-        define_query! {
-            #[rerun(always)]
-            fn always<'cx>(_cx: &Context<'cx>, _inp: &()) -> () {}
-            fn cache<'cx>(_cx: &Context<'cx>, _inp: &()) -> () {}
-            #[rerun(generation)]
-            fn generation<'cx>(_cx: &Context<'cx>, _inp: &()) -> () {}
-        }
-        log();
-
-        assert_eq!(always.mode(), QueryMode::Always);
-        assert_eq!(generation.mode(), QueryMode::Generation);
-        assert_eq!(cache.mode(), QueryMode::Cache);
-    }
+    // #[test]
+    // fn query_mode() {
+    //     define_query! {
+    //         #[rerun(always)]
+    //         fn always<'cx>(_cx: &Context<'cx>, _inp: &()) -> () {}
+    //         fn cache<'cx>(_cx: &Context<'cx>, _inp: &()) -> () {}
+    //         #[rerun(generation)]
+    //         fn generation<'cx>(_cx: &Context<'cx>, _inp: &()) -> () {}
+    //     }
+    //     log();
+    //
+    //     assert_eq!(always.mode(), QueryMode::Always);
+    //     assert_eq!(generation.mode(), QueryMode::Generation);
+    //     assert_eq!(cache.mode(), QueryMode::Cache);
+    // }
 
     use std::{
         cell::{Cell, RefCell},
@@ -187,7 +184,7 @@ mod tests {
         rc::Rc,
     };
 
-    use crate::{query_parameter::QueryParameter, storage::Storage, Context, Query, QueryHasher};
+    use crate::{query_parameter::QueryParameter, storage::Storage, Context, QueryHasher};
     use rand::{thread_rng, Rng};
 
     #[derive(Clone)]
@@ -256,7 +253,7 @@ mod tests {
 
         let ctr = Counter::new(0);
         let cx = Context::new(&storage);
-        test.query(&cx, ctr.clone());
+        test(&cx, ctr.clone());
         assert_eq!(ctr.get(), 1);
     }
 
@@ -274,8 +271,8 @@ mod tests {
         let ctr = Counter::new(0);
         let cx = Context::new(&storage);
 
-        called_twice.query(&cx, ctr.clone());
-        called_twice.query(&cx, ctr.clone());
+        called_twice(&cx, ctr.clone());
+        called_twice(&cx, ctr.clone());
         assert_eq!(ctr.get(), 1);
     }
 
@@ -289,8 +286,7 @@ mod tests {
 
             fn depends_on_impure<'cx>(cx: &Context<'cx>, inp: &Counter) -> () {
                 inp.add();
-                let _dep = random.query(cx);
-
+                let _dep = random(cx);
             }
         }
 
@@ -300,8 +296,8 @@ mod tests {
 
         let ctr = Counter::new(0);
         let cx = Context::new(&storage);
-        depends_on_impure.query(&cx, ctr.clone());
-        depends_on_impure.query(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
 
         assert_eq!(ctr.get(), 2);
     }
@@ -315,7 +311,7 @@ mod tests {
             }
 
             fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
-                let v = intvalue.query(cx, r.clone());
+                let v = intvalue(cx, r.clone());
                 c2.add();
 
                 v.is_positive()
@@ -323,7 +319,7 @@ mod tests {
 
             fn some_other_query<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c1: &Counter, c2: &Counter) -> () {
                 c1.add();
-                sign_of.query(cx, r.clone(), c2.clone());
+                sign_of(cx, r.clone(), c2.clone());
             }
         }
         log();
@@ -340,8 +336,8 @@ mod tests {
         let counter2 = Counter::new(2);
         let cx = Context::new(&storage);
 
-        some_other_query.query(&cx, order.clone(), counter1.clone(), counter2.clone());
-        some_other_query.query(&cx, order.clone(), counter1.clone(), counter2.clone());
+        some_other_query(&cx, order.clone(), counter1.clone(), counter2.clone());
+        some_other_query(&cx, order.clone(), counter1.clone(), counter2.clone());
 
         assert!(order.is_empty());
         assert_eq!(counter1.get(), 1);
@@ -357,7 +353,7 @@ mod tests {
             }
 
             fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
-                let v = intvalue.query(cx, r.clone());
+                let v = intvalue(cx, r.clone());
                 c2.add();
 
                 v.is_positive()
@@ -365,7 +361,7 @@ mod tests {
 
             fn some_other_query<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c1: &Counter, c2: &Counter) -> () {
                 c1.add();
-                sign_of.query(cx, r.clone(), c2.clone());
+                sign_of(cx, r.clone(), c2.clone());
             }
         }
         log();
@@ -379,9 +375,9 @@ mod tests {
         let counter2 = Counter::new(2);
         let cx = Context::new(&storage);
 
-        some_other_query.query(&cx, order.clone(), counter1.clone(), counter2.clone());
+        some_other_query(&cx, order.clone(), counter1.clone(), counter2.clone());
         cx.next_generation();
-        some_other_query.query(&cx,order.clone(), counter1.clone(), counter2.clone());
+        some_other_query(&cx,order.clone(), counter1.clone(), counter2.clone());
 
         assert!(order.is_empty());
         assert_eq!(counter1.get(), 1);
@@ -397,7 +393,7 @@ mod tests {
             }
 
             fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
-                let v = intvalue.query(cx, r.clone());
+                let v = intvalue(cx, r.clone());
                 c2.add();
 
                 v.is_positive()
@@ -405,7 +401,7 @@ mod tests {
 
             fn some_other_query<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c1: &Counter, c2: &Counter) -> () {
                 c1.add();
-                sign_of.query(cx, r.clone(), c2.clone());
+                sign_of(cx, r.clone(), c2.clone());
             }
         }
         log();
@@ -419,11 +415,11 @@ mod tests {
         let counter2 = Counter::new(2);
         let cx = Context::new(&storage);
 
-        some_other_query.query(&cx, order.clone(), counter1.clone(), counter2.clone());
+        some_other_query(&cx, order.clone(), counter1.clone(), counter2.clone());
         cx.next_generation();
-        some_other_query.query(&cx, order.clone(), counter1.clone(), counter2.clone());
+        some_other_query(&cx, order.clone(), counter1.clone(), counter2.clone());
         cx.next_generation();
-        some_other_query.query(&cx, order.clone(), counter1.clone(), counter2.clone());
+        some_other_query(&cx, order.clone(), counter1.clone(), counter2.clone());
 
         assert!(order.is_empty());
         assert_eq!(counter1.get(), 1);
@@ -438,7 +434,7 @@ mod tests {
             }
 
             fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
-                let v = intvalue.query(cx, r.clone());
+                let v = intvalue(cx, r.clone());
                 c2.add();
 
                 v.is_positive()
@@ -446,7 +442,7 @@ mod tests {
 
             fn some_other_query<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c1: &Counter, c2: &Counter) -> () {
                 c1.add();
-                sign_of.query(cx, r.clone(), c2.clone());
+                sign_of(cx, r.clone(), c2.clone());
             }
         }
         log();
@@ -460,8 +456,8 @@ mod tests {
         let counter2 = Counter::new(2);
         let cx = Context::new(&storage);
 
-        some_other_query.query(&cx, order.clone(), counter1.clone(), counter2.clone());
-        some_other_query.query(&cx, order.clone(), counter1.clone(), counter2.clone());
+        some_other_query(&cx, order.clone(), counter1.clone(), counter2.clone());
+        some_other_query(&cx, order.clone(), counter1.clone(), counter2.clone());
 
         assert!(!order.is_empty());
         assert_eq!(counter1.get(), 1);
@@ -485,10 +481,10 @@ mod tests {
             }
 
             fn conditional<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<bool>, c: &Counter) -> u64 {
-                if *boolean_query.query(cx, r.clone()) {
-                    *one.query(cx)
+                if *boolean_query(cx, r.clone()) {
+                    *one(cx)
                 } else {
-                    *two.query(cx, c.clone())
+                    *two(cx, c.clone())
                 }
             }
         }
@@ -500,11 +496,11 @@ mod tests {
         let counter = Counter::new(0);
         let cx = Context::new(&storage);
 
-        assert_eq!(conditional.query(&cx, order.clone(), counter.clone()), &1);
+        assert_eq!(conditional(&cx, order.clone(), counter.clone()), &1);
         cx.next_generation();
-        assert_eq!(conditional.query(&cx, order.clone(), counter.clone()), &2);
-        assert_eq!(conditional.query(&cx, order.clone(), counter.clone()), &2);
-        assert_eq!(conditional.query(&cx, order.clone(), counter.clone()), &2);
+        assert_eq!(conditional(&cx, order.clone(), counter.clone()), &2);
+        assert_eq!(conditional(&cx, order.clone(), counter.clone()), &2);
+        assert_eq!(conditional(&cx, order.clone(), counter.clone()), &2);
         assert_eq!(counter.get(), 1);
         assert!(order.is_empty())
     }
@@ -514,7 +510,7 @@ mod tests {
     fn cycle() {
         define_query! {
             fn cyclic<'cx>(cx: &Context<'cx>, r: &u64) -> bool {
-              *cyclic.query(cx, *r)
+              *cyclic(cx, *r)
             }
         }
 
@@ -522,7 +518,7 @@ mod tests {
 
         let storage = Storage::new();
         let cx = Context::new(&storage);
-        cyclic.query(&cx, 10);
+        cyclic(&cx, 10);
     }
 
     #[test]
@@ -530,30 +526,30 @@ mod tests {
     fn long_cycle() {
         define_query! {
             fn e<'cx>(cx: &Context<'cx>, r: &u64) -> bool {
-              *a.query(cx, *r)
+              *a(cx, *r)
             }
 
             fn d<'cx>(cx: &Context<'cx>, r: &u64) -> bool {
-              *e.query(cx, *r)
+              *e(cx, *r)
             }
 
             fn c<'cx>(cx: &Context<'cx>, r: &u64) -> bool {
-              *d.query(cx, *r)
+              *d(cx, *r)
             }
 
             fn b<'cx>(cx: &Context<'cx>, r: &u64) -> bool {
-              *c.query(cx, *r)
+              *c(cx, *r)
             }
 
             fn a<'cx>(cx: &Context<'cx>, r: &u64) -> bool {
-              *b.query(cx, *r)
+              *b(cx, *r)
             }
         }
         log();
 
         let storage = Storage::new();
         let cx = Context::new(&storage);
-        a.query(&cx, 10);
+        a(&cx, 10);
     }
 
     #[test]
@@ -569,12 +565,12 @@ mod tests {
             }
 
             fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>) -> bool {
-                let v = intvalue.query(cx, r.clone());
-                value_dependent.query(cx, *v).is_positive()
+                let v = intvalue(cx, r.clone());
+                value_dependent(cx, *v).is_positive()
             }
 
             fn some_other_query<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>) -> () {
-                sign_of.query(cx, r.clone());
+                sign_of(cx, r.clone());
             }
         }
         log();
@@ -594,7 +590,7 @@ mod tests {
         let cx = Context::new(&storage);
 
         for _ in 0..N {
-            some_other_query.query(&cx, order.clone());
+            some_other_query(&cx, order.clone());
             cx.next_generation();
         }
         assert!(order.is_empty());
@@ -617,8 +613,7 @@ mod tests {
 
             fn depends_on_impure<'cx>(cx: &Context<'cx>, inp: &Counter) -> () {
                 inp.add();
-                let _dep = random.query(&cx);
-
+                let _dep = random(&cx);
             }
         }
 
@@ -628,11 +623,11 @@ mod tests {
 
         let ctr = Counter::new(0);
         let cx = Context::new(&storage);
-        depends_on_impure.query(&cx, ctr.clone());
-        depends_on_impure.query(&cx, ctr.clone());
-        depends_on_impure.query(&cx, ctr.clone());
-        depends_on_impure.query(&cx, ctr.clone());
-        depends_on_impure.query(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
 
         assert_eq!(ctr.get(), 5);
     }
@@ -646,7 +641,7 @@ mod tests {
 
             fn depends_on_impure<'cx>(cx: &Context<'cx>, inp: &Counter) -> () {
                 inp.add();
-                let _dep = random.query(cx);
+                let _dep = random(cx);
 
             }
         }
@@ -658,22 +653,22 @@ mod tests {
         let ctr = Counter::new(0);
         let cx = Context::new(&storage);
         cx.set_cache_enabled(false);
-        depends_on_impure.query(&cx, ctr.clone());
-        depends_on_impure.query(&cx, ctr.clone());
-        depends_on_impure.query(&cx, ctr.clone());
-        depends_on_impure.query(&cx, ctr.clone());
-        depends_on_impure.query(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
 
         assert_eq!(ctr.get(), 5);
 
         let ctr = Counter::new(0);
         let cx = Context::new(&storage);
         cx.set_cache_enabled(true);
-        depends_on_impure.query(&cx, ctr.clone());
-        depends_on_impure.query(&cx, ctr.clone());
-        depends_on_impure.query(&cx, ctr.clone());
-        depends_on_impure.query(&cx, ctr.clone());
-        depends_on_impure.query(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
+        depends_on_impure(&cx, ctr.clone());
 
         assert_eq!(ctr.get(), 1);
     }

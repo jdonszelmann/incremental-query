@@ -610,7 +610,7 @@ impl<'cx> Context<'cx> {
     /// let storage = Storage::new();
     ///
     /// let cx = Context::new(&storage);
-    /// let output = cx.query(some_query, (param1, param2, param3));
+    /// let output = some_query(&cx, param1, param2, param3);
     /// ```
     ///
     /// again, here `some_query` refers to the query that has to be run.
