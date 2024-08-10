@@ -7,7 +7,11 @@ use std::{
 
 use super::{storage::Storage, QueryHasher};
 
-/// Query parameters should be hashable etc
+/// Query parameters should be hashable and clonable.
+///
+/// The hash infrastructure is part of this trait itself, because
+/// it's not unlikely you want to hash the elements you pass into
+/// queries in a different way than they are hashed by default.
 pub trait QueryParameter: Sized + Clone + 'static {
     fn hash_stable(&self, hasher: &mut QueryHasher);
 
@@ -122,7 +126,7 @@ macro_rules! impl_query_parameter {
     () => {};
     ($first: ident $($rest: ident)*) => {
         impl<$first: QueryParameter, $($rest: QueryParameter),*> QueryParameter for ($first, $($rest),*) {
-            fn hash_stable(&self, hasher: &mut $crate::incremental::QueryHasher) {
+            fn hash_stable(&self, hasher: &mut $crate::QueryHasher) {
                 hasher.write_usize(count!($first $($rest)*));
 
                 map!(let x; x.hash_stable(hasher); self; $first $($rest)*);
@@ -141,7 +145,7 @@ macro_rules! impl_integers {
     ($($ty: ty => $name: ident),* $(,)?) => {
         $(
             impl QueryParameter for $ty {
-                fn hash_stable(&self, hasher: &mut $crate::incremental::QueryHasher) {
+                fn hash_stable(&self, hasher: &mut $crate::QueryHasher) {
                     hasher.$name(*self);
                 }
             }

@@ -2,7 +2,7 @@
 pub struct Generation(pub(super) u64);
 
 impl Generation {
-    // special null generation; never executed
+    /// special null generation; never executed
     pub const NULL: Generation = Generation(0);
 
     pub fn new() -> Self {

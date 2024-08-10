@@ -10,10 +10,14 @@ use std::{
 use siphasher::sip128::Hasher128;
 use tracing::Level;
 
-use crate::incremental::query::{QueryColor, QueryMode};
+use crate::query::{QueryColor, QueryMode};
 
 use super::{
-    generation::Generation, query::{Query, QueryInstance}, query_parameter::{QueryParameter, TypeErasedQueryParam}, storage::Storage, QueryHasher
+    generation::Generation,
+    query::{Query, QueryInstance},
+    query_parameter::{QueryParameter, TypeErasedQueryParam},
+    storage::Storage,
+    QueryHasher,
 };
 
 // inspired by https://smallcultfollowing.com/babysteps/blog/2015/04/06/modeling-graphs-in-rust-using-vector-indices/
@@ -105,7 +109,7 @@ impl CycleDetection {
     }
 }
 
-pub struct Inner<'cx> {
+struct Inner<'cx> {
     // index in the nodes array
     curr: Option<usize>,
 
@@ -168,6 +172,8 @@ fn outgoing_edges(node: usize, nodes: &[Node], edges: &[Edge]) -> OutgoingEdgeIt
     }
 }
 
+/// The context is the most important part of incremental compilation,
+/// the structure through which queries are run and that caches query invocations.
 pub struct Context<'cx> {
     inner: RefCell<Inner<'cx>>,
 
@@ -207,8 +213,19 @@ impl<'cx> Context<'cx> {
         self.inner.borrow_mut().generation.next();
     }
 
-    // note: after this, all objects are allocated in new_storage
-    // and you can delete the old backing storage.
+    /// Garbage collect the context. Deletes unreachable notes.
+    /// Reachability is evaluated based on "root" nodes.
+    ///
+    /// Some queries are run as part of another query in the query system,
+    /// I like to call those queries that run "inside" the query system.
+    /// Other queries are run from "outside" the query system after you
+    /// created a new [`Context`] and want to run your first query.
+    ///
+    /// These outside queries are considered root queries, and any node reachable
+    /// from them is kept alive by [`gc`](Context::gc).
+    ///
+    /// After this, all objects are allocated in `new_storage` and you can delete
+    /// the old backing storage to actually save space.
     pub fn gc(self, new_storage: &Storage) -> Context<'_> {
         let Inner {
             curr,
@@ -325,7 +342,11 @@ impl<'cx> Context<'cx> {
         }
     }
 
-    // returns the (approximate) size in bytes of the cache right now.
+    /// Returns the (approximate) size in bytes of the cache right now.
+    ///
+    /// The approximation is always at most wrong by a linear factor,
+    /// and can be used to determine when to garbage collect. However,
+    /// some fields that don't actually grow are not counted.
     pub fn size(&self) -> usize {
         let inner = self.inner.borrow();
         let nodes_size = inner.nodes.len() * mem::size_of::<Node>();
@@ -338,9 +359,11 @@ impl<'cx> Context<'cx> {
     // pub fn deserialize() {}
 
     // pub fn serialize(&mut self, path: impl) {
-    //     
+    //
     // }
 
+    /// Used in macros
+    #[doc(hidden)]
     pub fn hash<Q: Query<'cx>>(&self, query: Q, input: &impl QueryParameter) -> u128 {
         let mut hasher = QueryHasher::new();
         // also hash the query, so that paramters to different
@@ -538,7 +561,7 @@ impl<'cx> Context<'cx> {
         let generation = inner.generation;
         let instance = &mut inner.get_node_mut(node).query_instance;
 
-        tracing::debug!("hash: {} => {}", instance.output_hash, output_hash);
+        tracing::trace!("hash: {} => {}", instance.output_hash, output_hash);
 
         // update the node based on the result
         instance.color = if instance.output.is_none() {
@@ -569,6 +592,29 @@ impl<'cx> Context<'cx> {
         instance.output.unwrap()
     }
 
+    /// Run a query in the query system. Queries look like functions, but
+    /// you cannot actually call them directly. Instead, you should use code
+    /// similar to the following example:
+    ///
+    /// ```rust
+    /// # use moment::{Context, define_query, Storage};
+    ///
+    /// define_query! {
+    ///     fn some_query<'cx>(cx: &Context<'cx>, param1: &u64, param2: &u64, param3: &u64) -> u64 {
+    /// #       _ = (param2, param3);
+    ///         *param1
+    ///     }
+    /// }
+    /// # let (param1, param2, param3) = (1, 2, 3);
+    ///
+    /// let storage = Storage::new();
+    ///
+    /// let cx = Context::new(&storage);
+    /// let output = cx.query(some_query, (param1, param2, param3));
+    /// ```
+    ///
+    /// again, here `some_query` refers to the query that has to be run.
+    /// It's definiton (using [`define_query`](crate::define_query))
     pub fn query<Q: Query<'cx>>(&self, query: Q, input: Q::Input) -> &'cx Q::Output {
         let input_hash = self.hash(query, &input);
         if self
@@ -650,7 +696,7 @@ impl<'cx> Context<'cx> {
 
 #[cfg(test)]
 mod tests {
-    use crate::incremental::context::NO_HASHSET_LEN;
+    use crate::context::NO_HASHSET_LEN;
 
     use super::CycleDetection;
 

@@ -1,3 +1,5 @@
+#![feature(macro_metavar_expr)]
+
 use siphasher::sip128::SipHasher13;
 
 mod context;
@@ -7,28 +9,29 @@ mod query_parameter;
 mod storage;
 
 pub use context::Context;
-pub use query::Query;
 pub use query_parameter::QueryParameter;
 pub use storage::Storage;
 
+// used in macros, hidden to the user
 #[doc(hidden)]
-pub use query::{ErasedQueryRun, QueryMode};
+pub use query::{ErasedQueryRun, Query, QueryMode};
 #[doc(hidden)]
 pub use query_parameter::TypeErasedQueryParam;
 
 pub type QueryHasher = SipHasher13;
 
+#[macro_export]
 macro_rules! parse_attrs {
     (rerun(always) $($rest:tt)*) => {
-        fn mode(&self) -> $crate::incremental::QueryMode {
-            $crate::incremental::query::QueryMode::Always
+        fn mode(&self) -> $crate::QueryMode {
+            $crate::query::QueryMode::Always
         }
 
         parse_attrs!($($rest)*);
     };
     (rerun(generation) $($rest:tt)*) => {
-        fn mode(&self) -> $crate::incremental::QueryMode {
-            $crate::incremental::QueryMode::Generation
+        fn mode(&self) -> $crate::QueryMode {
+            $crate::QueryMode::Generation
         }
 
         parse_attrs!($($rest)*);
@@ -37,6 +40,8 @@ macro_rules! parse_attrs {
     () => {};
 }
 
+#[macro_export]
+#[doc(hidden)]
 macro_rules! tup_or_empty {
     () => {
         ()
@@ -46,6 +51,7 @@ macro_rules! tup_or_empty {
     };
 }
 
+#[macro_export]
 macro_rules! define_query {
     (
         $(#[$($attr: tt)*])*
@@ -58,26 +64,26 @@ macro_rules! define_query {
         #[allow(non_camel_case_types)]
         struct $name;
 
-        impl<$lt> $crate::incremental::Query<$lt> for $name {
-            type Input = tup_or_empty!($($param)*);
+        impl<$lt> $crate::Query<$lt> for $name {
+            type Input = $crate::tup_or_empty!($($param)*);
             type Output = $ret;
 
             const NAME: &'static str = stringify!($name);
 
-            fn get_run_fn() -> $crate::incremental::ErasedQueryRun {
+            fn get_run_fn() -> $crate::ErasedQueryRun {
                 fn run<'cx>(
-                    cx: &$crate::incremental::Context<'cx>,
-                    input: $crate::incremental::TypeErasedQueryParam<'cx>,
+                    cx: &$crate::Context<'cx>,
+                    input: $crate::TypeErasedQueryParam<'cx>,
                     should_alloc: &dyn Fn(u128) -> bool,
-                ) -> (Option<$crate::incremental::TypeErasedQueryParam<'cx>>, u128) {
+                ) -> (Option<$crate::TypeErasedQueryParam<'cx>>, u128) {
                     // safety: we know thatcx is Q::Input here because this function is generated
                     // together with the definition of the query
-                    let input: &tup_or_empty!($($param)*) = unsafe{input.get_ref()};
-                    let output = <$name as $crate::incremental::Query<'cx>>::run(cx, input);
+                    let input: &$crate::tup_or_empty!($($param)*) = unsafe{input.get_ref()};
+                    let output = <$name as $crate::Query<'cx>>::run(cx, input);
 
                     let output_hash = cx.hash($name, &output);
                     if should_alloc(output_hash) {
-                        (Some($crate::incremental::TypeErasedQueryParam::new(cx.storage.alloc(output))), output_hash)
+                        (Some($crate::TypeErasedQueryParam::new(cx.storage.alloc(output))), output_hash)
                     } else {
                         (None, output_hash)
                     }
@@ -86,9 +92,9 @@ macro_rules! define_query {
                 run
             }
 
-            parse_attrs!($($($attr)*)*);
+            $crate::parse_attrs!($($($attr)*)*);
 
-            fn run($cxname: &$crate::incremental::Context<'cx>, tup_or_empty!($($paramname)*): &Self::Input) -> Self::Output $block
+            fn run($cxname: &$crate::Context<'cx>, $crate::tup_or_empty!($($paramname)*): &Self::Input) -> Self::Output $block
         }
     };
 }
@@ -110,7 +116,7 @@ pub fn log() {
 
 #[cfg(test)]
 mod tests {
-    use crate::incremental::{log, query::QueryMode};
+    use crate::{log, query::QueryMode};
 
     #[test]
     fn query_mode() {
@@ -139,9 +145,7 @@ mod tests {
         rc::Rc,
     };
 
-    use crate::incremental::{
-        query_parameter::QueryParameter, storage::Storage, Context, Query, QueryHasher,
-    };
+    use crate::{query_parameter::QueryParameter, storage::Storage, Context, Query, QueryHasher};
     use rand::{thread_rng, Rng};
 
     #[derive(Clone)]
