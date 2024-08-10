@@ -61,6 +61,7 @@ macro_rules! tup_or_empty {
 /// The following example should illustrate its syntax pretty well:
 ///
 /// ```rust
+/// # use moment::define_query;
 /// define_query! {
 ///     // note: the lifetime <'cx> is required, (though you can choose a different name)
 ///     fn some_query<'cx>(
@@ -84,48 +85,52 @@ macro_rules! tup_or_empty {
 #[macro_export]
 macro_rules! define_query {
     (
-        $(#[$($attr: tt)*])*
-        fn $name: ident <$lt: lifetime>
-        ($cxname: ident: &Context<'cx> $(,$paramname: ident: &$param: ty)* $(,)?)
-        -> $ret: ty
-        $block: block
+        $(
+            $(#[$($attr: tt)*])*
+            fn $name: ident <$lt: lifetime>
+            ($cxname: ident: &Context<'cx> $(,$paramname: ident: &$param: ty)* $(,)?)
+            -> $ret: ty
+            $block: block
+        )*
     ) => {
-        #[derive(Copy, Clone)]
-        #[allow(non_camel_case_types)]
-        struct $name;
+        $(
+            #[derive(Copy, Clone)]
+            #[allow(non_camel_case_types)]
+            struct $name;
 
-        impl<$lt> $crate::Query<$lt> for $name {
-            type Input = $crate::tup_or_empty!($($param)*);
-            type Output = $ret;
+            impl<$lt> $crate::Query<$lt> for $name {
+                type Input = $crate::tup_or_empty!($($param)*);
+                type Output = $ret;
 
-            const NAME: &'static str = stringify!($name);
+                const NAME: &'static str = stringify!($name);
 
-            fn get_run_fn() -> $crate::ErasedQueryRun {
-                fn run<'cx>(
-                    cx: &$crate::Context<'cx>,
-                    input: $crate::TypeErasedQueryParam<'cx>,
-                    should_alloc: &dyn Fn(u128) -> bool,
-                ) -> (Option<$crate::TypeErasedQueryParam<'cx>>, u128) {
-                    // safety: we know thatcx is Q::Input here because this function is generated
-                    // together with the definition of the query
-                    let input: &$crate::tup_or_empty!($($param)*) = unsafe{input.get_ref()};
-                    let output = <$name as $crate::Query<'cx>>::run(cx, input);
+                fn get_run_fn() -> $crate::ErasedQueryRun {
+                    fn run<'cx>(
+                        cx: &$crate::Context<'cx>,
+                        input: $crate::TypeErasedQueryParam<'cx>,
+                        should_alloc: &dyn Fn(u128) -> bool,
+                    ) -> (Option<$crate::TypeErasedQueryParam<'cx>>, u128) {
+                        // safety: we know thatcx is Q::Input here because this function is generated
+                        // together with the definition of the query
+                        let input: &$crate::tup_or_empty!($($param)*) = unsafe{input.get_ref()};
+                        let output = <$name as $crate::Query<'cx>>::run(cx, input);
 
-                    let output_hash = cx.hash($name, &output);
-                    if should_alloc(output_hash) {
-                        (Some($crate::TypeErasedQueryParam::new(cx.storage.alloc(output))), output_hash)
-                    } else {
-                        (None, output_hash)
+                        let output_hash = cx.hash($name, &output);
+                        if should_alloc(output_hash) {
+                            (Some($crate::TypeErasedQueryParam::new(cx.storage.alloc(output))), output_hash)
+                        } else {
+                            (None, output_hash)
+                        }
                     }
+
+                    run
                 }
 
-                run
+                $crate::parse_attrs!($($($attr)*)*);
+
+                fn run($cxname: &$crate::Context<'cx>, $crate::tup_or_empty!($($paramname)*): &Self::Input) -> Self::Output $block
             }
-
-            $crate::parse_attrs!($($($attr)*)*);
-
-            fn run($cxname: &$crate::Context<'cx>, $crate::tup_or_empty!($($paramname)*): &Self::Input) -> Self::Output $block
-        }
+        )*
     };
 }
 
@@ -153,11 +158,7 @@ mod tests {
         define_query! {
             #[rerun(always)]
             fn always<'cx>(_ctx: &Context<'cx>, _inp: &()) -> () {}
-        }
-        define_query! {
             fn cache<'cx>(_ctx: &Context<'cx>, _inp: &()) -> () {}
-        }
-        define_query! {
             #[rerun(generation)]
             fn generation<'cx>(_ctx: &Context<'cx>, _inp: &()) -> () {}
         }
@@ -274,8 +275,7 @@ mod tests {
             fn random<'cx>(_ctx: &Context<'cx>,) -> u64 {
                 thread_rng().gen_range(0..u64::MAX)
             }
-        }
-        define_query! {
+
             fn depends_on_impure<'cx>(ctx: &Context<'cx>, inp: &Counter) -> () {
                 inp.add();
                 let _dep = ctx.query(random, ());
@@ -302,16 +302,14 @@ mod tests {
             fn intvalue<'cx>(_ctx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
                 r.next()
             }
-        }
-        define_query! {
+
             fn sign_of<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
                 let v = ctx.query(intvalue, (r.clone(),));
                 c2.add();
 
                 v.is_positive()
             }
-        }
-        define_query! {
+
             fn some_other_query<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<i64>, c1: &Counter, c2: &Counter) -> () {
                 c1.add();
                 ctx.query(sign_of, (r.clone(), c2.clone()));
@@ -352,16 +350,14 @@ mod tests {
             fn intvalue<'cx>(_ctx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
                 r.next()
             }
-        }
-        define_query! {
+
             fn sign_of<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
                 let v = ctx.query(intvalue, (r.clone(),));
                 c2.add();
 
                 v.is_positive()
             }
-        }
-        define_query! {
+
             fn some_other_query<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<i64>, c1: &Counter, c2: &Counter) -> () {
                 c1.add();
                 ctx.query(sign_of, (r.clone(), c2.clone()));
@@ -400,16 +396,14 @@ mod tests {
             fn intvalue<'cx>(_ctx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
                 r.next()
             }
-        }
-        define_query! {
+
             fn sign_of<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
                 let v = ctx.query(intvalue, (r.clone(),));
                 c2.add();
 
                 v.is_positive()
             }
-        }
-        define_query! {
+
             fn some_other_query<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<i64>, c1: &Counter, c2: &Counter) -> () {
                 c1.add();
                 ctx.query(sign_of, (r.clone(), c2.clone()));
@@ -452,16 +446,14 @@ mod tests {
             fn intvalue<'cx>(_ctx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
                 r.next()
             }
-        }
-        define_query! {
+
             fn sign_of<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
                 let v = ctx.query(intvalue, (r.clone(),));
                 c2.add();
 
                 v.is_positive()
             }
-        }
-        define_query! {
+
             fn some_other_query<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<i64>, c1: &Counter, c2: &Counter) -> () {
                 c1.add();
                 ctx.query(sign_of, (r.clone(), c2.clone()));
@@ -499,18 +491,15 @@ mod tests {
             fn boolean_query<'cx>(_ctx: &Context<'cx>, r: &ReturnInOrder<bool>) -> bool {
                 r.next()
             }
-        }
-        define_query!(
+
             fn one<'cx>(_ctx: &Context<'cx>) -> u64 {
                 1
             }
-        );
-        define_query!(
             fn two<'cx>(_ctx: &Context<'cx>, c: &Counter) -> u64 {
                 c.add();
                 2
             }
-        );
+        };
         define_query! {
             fn conditional<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<bool>, c: &Counter) -> u64 {
                 if *ctx.query(boolean_query, (r.clone(),)) {
@@ -560,23 +549,19 @@ mod tests {
             fn e<'cx>(ctx: &Context<'cx>, r: &u64) -> bool {
               *ctx.query(a, (*r,))
             }
-        }
-        define_query! {
+
             fn d<'cx>(ctx: &Context<'cx>, r: &u64) -> bool {
               *ctx.query(e, (*r,))
             }
-        }
-        define_query! {
+
             fn c<'cx>(ctx: &Context<'cx>, r: &u64) -> bool {
               *ctx.query(d, (*r,))
             }
-        }
-        define_query! {
+
             fn b<'cx>(ctx: &Context<'cx>, r: &u64) -> bool {
               *ctx.query(c, (*r,))
             }
-        }
-        define_query! {
+
             fn a<'cx>(ctx: &Context<'cx>, r: &u64) -> bool {
               *ctx.query(b, (*r,))
             }
@@ -594,20 +579,17 @@ mod tests {
             fn value_dependent<'cx>(_ctx: &Context<'cx>, r: &i64) -> i64 {
                 r * 2
             }
-        }
-        define_query! {
+
             #[rerun(generation)]
             fn intvalue<'cx>(_ctx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
                 r.next()
             }
-        }
-        define_query! {
+
             fn sign_of<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<i64>) -> bool {
                 let v = ctx.query(intvalue, (r.clone(),));
                 ctx.query(value_dependent, (*v,)).is_positive()
             }
-        }
-        define_query! {
+
             fn some_other_query<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<i64>) -> () {
                 ctx.query(sign_of, (r.clone(),));
             }
@@ -649,8 +631,7 @@ mod tests {
             fn random<'cx>(_ctx: &Context<'cx>,) -> u64 {
                 thread_rng().gen_range(0..u64::MAX)
             }
-        }
-        define_query! {
+
             fn depends_on_impure<'cx>(ctx: &Context<'cx>, inp: &Counter) -> () {
                 inp.add();
                 let _dep = ctx.query(random, ());
