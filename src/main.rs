@@ -580,37 +580,6 @@ mod tests {
     }
 
     #[test]
-    fn cache_on() {
-        define_query! {
-            fn random<'cx>(_ctx: &Context<'cx>,) -> u64 {
-                thread_rng().gen_range(0..u64::MAX)
-            }
-        }
-        define_query! {
-            fn depends_on_impure<'cx>(ctx: &Context<'cx>, inp: &Counter) -> () {
-                inp.add();
-                let _dep = ctx.query(random, ());
-
-            }
-        }
-
-        log();
-
-        let storage = Storage::new();
-
-        let ctr = Counter::new(0);
-        let ctx = Context::new(&storage);
-        ctx.set_cache_enabled(true);
-        ctx.query(depends_on_impure, (ctr.clone(),));
-        ctx.query(depends_on_impure, (ctr.clone(),));
-        ctx.query(depends_on_impure, (ctr.clone(),));
-        ctx.query(depends_on_impure, (ctr.clone(),));
-        ctx.query(depends_on_impure, (ctr.clone(),));
-
-        assert_eq!(ctr.get(), 1);
-    }
-
-    #[test]
     fn cache_off() {
         define_query! {
             fn random<'cx>(_ctx: &Context<'cx>,) -> u64 {
@@ -639,5 +608,16 @@ mod tests {
         ctx.query(depends_on_impure, (ctr.clone(),));
 
         assert_eq!(ctr.get(), 5);
+
+        let ctr = Counter::new(0);
+        let ctx = Context::new(&storage);
+        ctx.set_cache_enabled(true);
+        ctx.query(depends_on_impure, (ctr.clone(),));
+        ctx.query(depends_on_impure, (ctr.clone(),));
+        ctx.query(depends_on_impure, (ctr.clone(),));
+        ctx.query(depends_on_impure, (ctr.clone(),));
+        ctx.query(depends_on_impure, (ctr.clone(),));
+
+        assert_eq!(ctr.get(), 1);
     }
 }
