@@ -13,32 +13,8 @@ use tracing::Level;
 use crate::incremental::query::{QueryColor, QueryMode};
 
 use super::{
-    query::{Query, QueryInstance},
-    query_parameter::{QueryParameter, TypeErasedQueryParam},
-    storage::Storage,
-    QueryHasher,
+    generation::Generation, query::{Query, QueryInstance}, query_parameter::{QueryParameter, TypeErasedQueryParam}, storage::Storage, QueryHasher
 };
-
-#[derive(Clone, Copy)]
-pub struct Generation(u64);
-
-impl Generation {
-    // special null generation; never executed
-    const NULL: Generation = Generation(0);
-
-    fn new() -> Self {
-        // generations start at 1
-        Self(1)
-    }
-
-    pub fn is_newer_than(&self, older: Self) -> bool {
-        older.0 < self.0
-    }
-
-    pub fn next(&mut self) {
-        self.0 += 1;
-    }
-}
 
 // inspired by https://smallcultfollowing.com/babysteps/blog/2015/04/06/modeling-graphs-in-rust-using-vector-indices/
 struct Node<'cx> {
@@ -360,7 +336,10 @@ impl<'cx> Context<'cx> {
         nodes_size + edges_size + arena_size + lookup_size
     }
     // pub fn deserialize() {}
-    // pub fn serialize() {}
+
+    // pub fn serialize(&mut self, path: impl) {
+    //     
+    // }
 
     pub fn hash<Q: Query<'cx>>(&self, query: Q, input: &impl QueryParameter) -> u128 {
         let mut hasher = QueryHasher::new();

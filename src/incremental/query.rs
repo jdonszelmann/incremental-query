@@ -1,18 +1,10 @@
-use std::{any::TypeId, fmt::Display};
+use std::fmt::Display;
 
 use super::{
-    context::{Context, Generation},
+    context::Context,
+    generation::Generation,
     query_parameter::{QueryParameter, TypeErasedQueryParam},
 };
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub struct QueryId(TypeId);
-impl QueryId {
-    #[doc(hidden)]
-    pub const fn new(id: TypeId) -> Self {
-        Self(id)
-    }
-}
 
 pub trait Query<'cx>: 'static + Copy + Clone {
     type Input: QueryParameter + 'cx;
