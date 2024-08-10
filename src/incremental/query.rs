@@ -35,11 +35,11 @@ pub enum QueryColor {
     Unknown,
 }
 
-pub type ErasedQueryRun = &'static dyn (for<'cx> Fn(
+pub type ErasedQueryRun = for<'cx> fn(
     &Context<'cx>,
     TypeErasedQueryParam<'cx>,
     &dyn Fn(u128) -> bool,
-) -> (Option<TypeErasedQueryParam<'cx>>, u128));
+) -> (Option<TypeErasedQueryParam<'cx>>, u128);
 
 pub struct QueryInstance<'cx> {
     pub run: ErasedQueryRun,
@@ -58,6 +58,7 @@ pub struct QueryInstance<'cx> {
     pub output_hash: u128,
 
     pub color: QueryColor,
+    pub transitively_has_always_dep: bool,
 }
 
 impl Display for QueryInstance<'_> {

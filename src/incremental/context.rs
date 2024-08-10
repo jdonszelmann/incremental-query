@@ -1,9 +1,5 @@
 use std::{
-    any::Any,
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    hash::Hash,
-    num::NonZeroUsize,
+    any::Any,  cell::RefCell, collections::{HashMap, HashSet, VecDeque}, hash::Hash, mem, num::NonZeroUsize
 };
 
 use siphasher::sip128::Hasher128;
@@ -57,14 +53,26 @@ struct Edge {
 }
 
 struct OutgoingEdgeIterator {
-    curr: Option<Edge>,
+    curr: Option<(Edge, NonZeroUsize)>,
 }
 
 impl OutgoingEdgeIterator {
     fn next_node(&mut self, cx: &Context) -> Option<usize> {
-        let Edge { node, next_edge } = self.curr?;
-        self.curr = next_edge.map(|e| cx.inner.borrow().edges[e.get()]);
+        self.next_node_inner(&cx.inner.borrow().edges)
+    }
+
+    fn next_node_inner(&mut self, edges: &[Edge]) -> Option<usize> {
+        let (Edge { node, next_edge }, _) = self.curr?;
+        self.curr = next_edge.map(|e| {
+            (edges[e.get()], e)
+        });
         Some(node)
+    }
+
+    fn next_edge(&mut self, edges: &[Edge]) -> Option<(Edge, NonZeroUsize)> {
+        let edge = self.curr;
+        self.next_node_inner(edges);
+        edge
     }
 }
 
@@ -125,6 +133,8 @@ pub struct Inner<'cx> {
     nodes: Vec<Node<'cx>>,
     edges: Vec<Edge>,
 
+    roots: Vec<u128>,
+
     // map hash to node index
     lookup: HashMap<u128, usize>,
 
@@ -164,14 +174,19 @@ impl<'cx> Inner<'cx> {
     }
 
     fn outgoing_edges(&self, node: usize) -> OutgoingEdgeIterator {
-        let node = self.get_node(node);
-        let first_edge_index = node.first_edge_index;
-
-        OutgoingEdgeIterator {
-            curr: first_edge_index.map(|e| self.edges[e.get()]),
-        }
+        outgoing_edges(node, &self.nodes, &self.edges)
     }
 }
+
+fn outgoing_edges(node: usize, nodes: &[Node], edges: &[Edge]) -> OutgoingEdgeIterator {
+    let node = &nodes[node];
+    let first_edge_index = node.first_edge_index;
+
+    OutgoingEdgeIterator {
+        curr: first_edge_index.map(|e| (edges[e.get()], e)),
+    }
+}
+
 
 pub struct Context<'cx> {
     inner: RefCell<Inner<'cx>>,
@@ -197,17 +212,137 @@ impl<'cx> Context<'cx> {
                 generation: Generation::new(),
                 lookup: HashMap::new(),
                 cycle_detection: CycleDetection::new(),
+                roots: Vec::new(),
             }),
         }
     }
 
     pub fn next_generation(&self) {
+        tracing::debug!("GENERATION {}", self.inner.borrow().generation.0);
         self.inner.borrow_mut().generation.next();
     }
 
-    // pub fn serialize() {}
-    // pub fn gc() {}
+    // note: after this, all objects are allocated in new_storage
+    // and you can delete the old backing storage.
+    pub fn gc<'a>(self, new_storage: &'a Storage) -> Context<'a> {
+        let Inner { curr, mut nodes, mut edges, roots, lookup, cycle_detection, generation } = self.inner.into_inner();
+
+        tracing::info!("old edges size: {}", edges.len());
+        tracing::info!("old nodes size: {}", nodes.len());
+        tracing::info!("old storage size: {}", self.storage.size());
+
+        let mut nodes_index_map = HashMap::new();
+        let mut edges_index_map = HashMap::new();
+        edges_index_map.insert(0, 0);
+        let mut todo = VecDeque::new();
+
+        for i in &roots {
+            if let Some(&node) = lookup.get(i) {
+                todo.push_back(node);
+            }
+        }
+        while let Some(old_idx) = todo.pop_front() {
+            let new_idx = nodes_index_map.len();
+            nodes_index_map.insert(old_idx, new_idx);
+
+            let mut outgoing = outgoing_edges(old_idx, &nodes, &edges);
+            while let Some(node) = outgoing.next_node_inner(&edges) {
+                todo.push_back(node);
+            }
+        }
+
+        let mut idx = 0;
+        nodes.retain_mut(|_| {
+            let retain = nodes_index_map.contains_key(&idx);
+            idx += 1;
+            retain
+        });
+
+        for node_idx in 0..nodes.len() {
+            let mut outgoing = outgoing_edges(node_idx, &nodes, &edges);
+            while let Some((edge, old_idx)) = outgoing.next_edge(&edges) {
+                let new_idx = edges_index_map.len();
+                edges_index_map.insert(old_idx.get(), new_idx);
+
+                edges[old_idx.get()].node = *nodes_index_map.get(&edge.node).unwrap();
+            }
+        }
+
+        let mut idx = 0;
+        edges.retain_mut(|_| {
+            let retain = edges_index_map.contains_key(&idx);
+            idx += 1;
+            retain
+        });
+
+        for node_idx in 0..nodes.len() {
+            if let Some(ref mut i) = nodes[node_idx].last_edge_index {
+                *i = NonZeroUsize::new(*edges_index_map.get(&i.get()).unwrap()).unwrap();
+            }           
+            if let Some(ref mut i) = nodes[node_idx].first_edge_index {
+                *i = NonZeroUsize::new(*edges_index_map.get(&i.get()).unwrap()).unwrap();
+            }
+        }
+
+        for edge_idx in 0..edges.len() {
+            if let Some(ref mut i) = edges[edge_idx].next_edge {
+                *i = NonZeroUsize::new(*edges_index_map.get(&i.get()).unwrap()).unwrap();
+            }
+        }
+
+        let old_nodes = nodes;
+        let mut nodes = Vec::new();
+
+        for n in old_nodes {
+            nodes.push(Node {
+                query_instance: QueryInstance {
+                    input: n.query_instance.input.deep_clone(&new_storage),
+                    output: n.query_instance.output.map(|i| i.deep_clone(&new_storage)),
+
+                    run: n.query_instance.run,
+                    name: n.query_instance.name,
+                    mode: n.query_instance.mode,
+                    generation: n.query_instance.generation,
+                    output_hash: n.query_instance.output_hash,
+                    color: n.query_instance.color,
+                    transitively_has_always_dep: n.query_instance.transitively_has_always_dep,
+                },
+                first_edge_index: n.first_edge_index,
+                last_edge_index: n.last_edge_index,
+            });
+        }
+
+
+        tracing::info!("new edges size: {}", edges.len());
+        tracing::info!("new nodes size: {}", nodes.len());
+        tracing::info!("new storage size: {}", new_storage.size());
+
+        Context {
+            inner: RefCell::new(Inner {
+                curr,
+                nodes,
+                edges,
+                roots,
+                lookup,
+                cycle_detection,
+                generation,
+            }),
+            storage: new_storage,
+        }
+    }
+
+    // returns the (approximate) size in bytes of the cache right now.
+    pub fn size(&self) -> usize {
+        let inner = self.inner.borrow();
+        let nodes_size = inner.nodes.len() * mem::size_of::<Node>();
+        let edges_size = inner.edges.len() * mem::size_of::<Edge>();
+        let arena_size = self.storage.size();
+        let lookup_size = inner.lookup.len() * (mem::size_of::<usize>() + mem::size_of::<u128>());
+
+        nodes_size + edges_size + arena_size + lookup_size
+    }
     // pub fn deserialize() {}
+    // pub fn serialize() {}
 
     pub fn hash<Q: Query<'cx>>(&self, query: Q, input: &impl QueryParameter) -> u128 {
         let mut hasher = QueryHasher::new();
@@ -247,8 +382,13 @@ impl<'cx> Context<'cx> {
             // at least, if the generation changed just make sure that there
             // aren't any dependent generational queries that used to return Green
             // but over the generation really should have started to return Red.
-            if instance.color == QueryColor::Green {
-                return true;
+            // TODO: check if there's a always dep
+            if instance.color == QueryColor::Green && 
+                !inner.generation.is_newer_than(instance.generation) &&
+                !instance.transitively_has_always_dep 
+            {
+                 tracing::debug!("automatic hit");
+                 return true;
             }
         }
 
@@ -280,6 +420,7 @@ impl<'cx> Context<'cx> {
             match self.inner.borrow().get_node(i).query_instance.color {
                 QueryColor::Green => continue, // however, on green we can continue
                 QueryColor::Red => {
+                    tracing::debug!("cache miss");
                     return false;
                 }
                 QueryColor::Unknown => {
@@ -287,6 +428,8 @@ impl<'cx> Context<'cx> {
                 }
             }
         }
+
+        tracing::debug!("cache hit all deps green");
 
         // if all inputs were green, we can set this node to green too.
         // it won't change (see Cache Promotion)
@@ -313,6 +456,17 @@ impl<'cx> Context<'cx> {
     }
 
     fn run_query_instance_of_node(&self, node: usize) -> TypeErasedQueryParam<'cx> {
+        {
+            let mut inner = self.inner.borrow_mut();
+            if let Some(old) = inner.curr {
+                // add an edge between what used to be the current node, and this one
+                // since we clearly depend on it.
+                // TODO: dedupe?
+                inner.add_edge_between(old, node);
+            }
+        }
+
+
         // we got the id of a node. The node already contains an output. The question is,
         // can we use it? If we can, return that output
         if let Some(output) = self.try_get_usable_cache(node) {
@@ -332,14 +486,8 @@ impl<'cx> Context<'cx> {
             // running it
             let old_curr_node = inner.curr;
             inner.curr = Some(node);
-            if let Some(old) = old_curr_node {
-                // add an edge between what used to be the current node, and this one
-                // since we clearly depend on it.
-                // TODO: dedupe?
-                inner.add_edge_between(old, node);
-            }
-
-            let node = inner.get_node_mut(node);
+              let node = inner.get_node_mut(node);
+            tracing::debug!("yeet dep list of {}", node.query_instance);
             // reset the dependents list,
             // since we're going to be rerunning the query
             // and the dependents might change
@@ -368,6 +516,19 @@ impl<'cx> Context<'cx> {
 
         let mut inner = self.inner.borrow_mut();
         inner.curr = old_curr_node;
+        // if the thing we just executed got marked as
+        // transitively having an always dep, then the parent also does.
+        if let Some(old_curr_node) = old_curr_node {
+            let has_transitive_dep = inner.get_node(node).query_instance.transitively_has_always_dep;
+
+            if inner.get_node(old_curr_node).query_instance.mode == QueryMode::Always {
+                inner.get_node_mut(old_curr_node).query_instance.transitively_has_always_dep = true;
+            } else {
+                inner.get_node_mut(old_curr_node).query_instance.transitively_has_always_dep = has_transitive_dep;
+            }
+        }
+
+
         let generation = inner.generation;
         let instance = &mut inner.get_node_mut(node).query_instance;
 
@@ -433,6 +594,14 @@ impl<'cx> Context<'cx> {
             panic!("cycle detected {}", data.join("\n"));
         }
 
+        // if we call this query but no query was currently active
+        // then this is a kind of query root. Anything it references
+        // should stay alive, and if something is not referenced by
+        // a root anymore we can safely garbage collect it.
+        if self.inner.borrow().curr.is_none() {
+            self.inner.borrow_mut().roots.push(input_hash);
+        }
+
         let node = if let Some(node) = self.is_cached(input_hash) {
             node
         } else {
@@ -450,6 +619,7 @@ impl<'cx> Context<'cx> {
                 input: TypeErasedQueryParam::new(input_ref),
                 output: None,
                 output_hash: 0,
+                transitively_has_always_dep: query.mode() == QueryMode::Always,
             };
 
             let mut this = self.inner.borrow_mut();

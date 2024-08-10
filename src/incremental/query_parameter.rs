@@ -5,11 +5,29 @@ use std::{
     rc::Rc,
 };
 
-use super::QueryHasher;
+use super::{storage::Storage, QueryHasher};
 
 /// Query parameters should be hashable etc
-pub trait QueryParameter {
+pub trait QueryParameter: Sized + Clone + 'static {
     fn hash_stable(&self, hasher: &mut QueryHasher);
+
+    fn get_clone<'cx>() -> TypeErasedCloneFn<'cx>
+    where
+        Self: 'cx,
+    {
+        fn clone<'cx, 'a, T: QueryParameter>(
+            this: TypeErasedQueryParam<'cx>,
+            storage: &'a Storage,
+        ) -> TypeErasedQueryParam<'a> {
+            // safety: T == Self, this clone function clones self
+            let this_ref = unsafe { this.get_ref::<T>() };
+            let new_this = this_ref.clone();
+            let new_ref = storage.alloc(new_this);
+            TypeErasedQueryParam::new(new_ref)
+        }
+
+        clone::<Self>
+    }
 }
 
 impl<T> QueryParameter for Option<T>
@@ -43,18 +61,27 @@ impl QueryParameter for () {
     fn hash_stable(&self, _hasher: &mut QueryHasher) {}
 }
 
+type TypeErasedCloneFn<'cx> =
+    for<'a> fn(this: TypeErasedQueryParam<'cx>, &'a Storage) -> TypeErasedQueryParam<'a>;
+
 #[derive(Copy, Clone)]
 pub struct TypeErasedQueryParam<'cx> {
     ptr: NonNull<()>,
-    phantom: PhantomData<&'cx dyn QueryParameter>,
+    clone: TypeErasedCloneFn<'cx>,
+    phantom: PhantomData<&'cx ()>,
 }
 
 impl<'cx> TypeErasedQueryParam<'cx> {
-    pub fn new(inp: &'cx impl QueryParameter) -> Self {
+    pub fn new<Q: QueryParameter>(inp: &'cx Q) -> Self {
         TypeErasedQueryParam {
             ptr: std::ptr::NonNull::from(inp).cast(),
+            clone: Q::get_clone(),
             phantom: PhantomData,
         }
+    }
+
+    pub fn get_ptr(&self) -> NonNull<()> {
+        self.ptr
     }
 
     // Convert this pointer to a query parameter,
@@ -63,6 +90,10 @@ impl<'cx> TypeErasedQueryParam<'cx> {
     // Safety: unsound unless T is the original type of this query parameter
     pub unsafe fn get_ref<T>(&self) -> &'cx T {
         &*self.ptr.as_ptr().cast()
+    }
+
+    pub fn deep_clone<'a>(&self, storage: &'a Storage) -> TypeErasedQueryParam<'a> {
+        (self.clone)(*self, storage)
     }
 }
 

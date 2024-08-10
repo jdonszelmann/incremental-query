@@ -39,7 +39,7 @@ macro_rules! define_query {
     (
         $(#[$($attr: tt)*])*
         fn $name: ident <$lt: lifetime>
-        ($cxname: ident: &Context<'cx>, $($paramname: ident: &$param: ty),* $(,)?)
+        ($cxname: ident: &Context<'cx> $(,$paramname: ident: &$param: ty)* $(,)?)
         -> $ret: ty
         $block: block
     ) => {
@@ -72,7 +72,7 @@ macro_rules! define_query {
                     }
                 }
 
-                &run
+                run
             }
 
             parse_attrs!($($($attr)*)*);

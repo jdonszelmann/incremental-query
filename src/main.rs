@@ -99,7 +99,7 @@ mod tests {
             self.0.hash(hasher);
         }
     }
-    impl<T> QueryParameter for ReturnInOrder<T> {
+    impl<T: Clone + 'static> QueryParameter for ReturnInOrder<T> {
         fn hash_stable(&self, hasher: &mut QueryHasher) {
             self.id.hash(hasher);
         }
@@ -300,6 +300,59 @@ mod tests {
     }
 
     #[test]
+    fn test_intvalue_many_generation() {
+        define_query! {
+            #[rerun(generation)]
+            fn intvalue<'cx>(_ctx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
+                r.next()
+            }
+        }
+        define_query! {
+            fn sign_of<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
+                let v = ctx.query(intvalue, (r.clone(),));
+                c2.add();
+
+                v.is_positive()
+            }
+        }
+        define_query! {
+            fn some_other_query<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<i64>, c1: &Counter, c2: &Counter) -> () {
+                c1.add();
+                ctx.query(sign_of, (r.clone(), c2.clone()));
+            }
+        }
+        log();
+
+        let storage = Storage::new();
+
+        // now 2000 is there only once because the query is generational, and the first run in the
+        // 2nd generation can be cached.
+        let order = ReturnInOrder::new(vec![1000, 2000, 3000], 1);
+        let counter1 = Counter::new(1);
+        let counter2 = Counter::new(2);
+        let ctx = Context::new(&storage);
+
+        ctx.query(
+            some_other_query,
+            (order.clone(), counter1.clone(), counter2.clone()),
+        );
+        ctx.next_generation();
+        ctx.query(
+            some_other_query,
+            (order.clone(), counter1.clone(), counter2.clone()),
+        );
+        ctx.next_generation();
+        ctx.query(
+            some_other_query,
+            (order.clone(), counter1.clone(), counter2.clone()),
+        );
+
+        assert!(order.is_empty());
+        assert_eq!(counter1.get(), 1);
+        assert_eq!(counter2.get(), 3);
+    }
+
+    #[test]
     fn test_intvalue_assume_pure_wrong() {
         define_query! {
             fn intvalue<'cx>(_ctx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
@@ -354,7 +407,7 @@ mod tests {
             }
         }
         define_query!(
-            fn one<'cx>(_ctx: &Context<'cx>,) -> u64 {
+            fn one<'cx>(_ctx: &Context<'cx>) -> u64 {
                 1
             }
         );
@@ -407,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    // #[should_panic]
+    #[should_panic]
     fn long_cycle() {
         define_query! {
             fn e<'cx>(ctx: &Context<'cx>, r: &u64) -> bool {
@@ -436,9 +489,93 @@ mod tests {
         }
         log();
 
-
         let storage = Storage::new();
         let ctx = Context::new(&storage);
         ctx.query(a, (10,));
+    }
+
+    #[test]
+    fn garbage_collect() {
+        define_query! {
+            fn value_dependent<'cx>(_ctx: &Context<'cx>, r: &i64) -> i64 {
+                r * 2
+            }
+        }
+        define_query! {
+            #[rerun(generation)]
+            fn intvalue<'cx>(_ctx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
+                r.next()
+            }
+        }
+        define_query! {
+            fn sign_of<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<i64>) -> bool {
+                let v = ctx.query(intvalue, (r.clone(),));
+                ctx.query(value_dependent, (*v,)).is_positive()
+            }
+        }
+        define_query! {
+            fn some_other_query<'cx>(ctx: &Context<'cx>, r: &ReturnInOrder<i64>) -> () {
+                ctx.query(sign_of, (r.clone(),));
+            }
+        }
+        log();
+
+        const N: i64 = 1000;
+
+        let storage = Storage::new();
+
+        let mut data = Vec::new();
+        for i in 0..N {
+            data.push(i * 1000);
+        }
+
+        // now 2000 is there only once because the query is generational, and the first run in the
+        // 2nd generation can be cached.
+        let order = ReturnInOrder::new(data, 1);
+        let ctx = Context::new(&storage);
+
+        for _ in 0..N {
+            ctx.query(some_other_query, (order.clone(),));
+            ctx.next_generation();
+        }
+        assert!(order.is_empty());
+
+        let new_storage = Storage::new();
+
+        tracing::info!("{}", ctx.size());
+        let res = ctx.gc(&new_storage);
+        drop(storage);
+        tracing::info!("{}", res.size());
+    }
+
+    #[test]
+    fn impure_cache_rerun() {
+        define_query! {
+            #[rerun(always)]
+            fn random<'cx>(_ctx: &Context<'cx>,) -> u64 {
+                thread_rng().gen_range(0..u64::MAX)
+            }
+        }
+        define_query! {
+            fn depends_on_impure<'cx>(ctx: &Context<'cx>, inp: &Counter) -> () {
+                inp.add();
+                let _dep = ctx.query(random, ());
+
+            }
+        }
+
+        log();
+
+        let storage = Storage::new();
+
+        let ctr = Counter::new(0);
+        let ctx = Context::new(&storage);
+        ctx.query(depends_on_impure, (ctr.clone(),));
+        ctx.query(depends_on_impure, (ctr.clone(),));
+        ctx.query(depends_on_impure, (ctr.clone(),));
+        ctx.query(depends_on_impure, (ctr.clone(),));
+        ctx.query(depends_on_impure, (ctr.clone(),));
+
+        assert_eq!(ctr.get(), 5);
     }
 }
