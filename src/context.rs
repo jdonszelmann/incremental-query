@@ -592,29 +592,7 @@ impl<'cx> Context<'cx> {
         instance.output.unwrap()
     }
 
-    /// Run a query in the query system. Queries look like functions, but
-    /// you cannot actually call them directly. Instead, you should use code
-    /// similar to the following example:
-    ///
-    /// ```rust
-    /// # use moment::{Context, define_query, Storage};
-    /// define_query! {
-    ///     fn some_query<'cx>(cx: &Context<'cx>, param1: &u64, param2: &u64, param3: &u64) -> u64 {
-    /// #       _ = (param2, param3);
-    /// #       *param1
-    ///         // ...
-    ///     }
-    /// }
-    /// # let (param1, param2, param3) = (1, 2, 3);
-    ///
-    /// let storage = Storage::new();
-    ///
-    /// let cx = Context::new(&storage);
-    /// let output = some_query(&cx, param1, param2, param3);
-    /// ```
-    ///
-    /// again, here `some_query` refers to the query that has to be run.
-    /// It's definiton (using [`define_query`](crate::define_query))
+    #[doc(hidden)]
     pub fn query<Q: Query<'cx>>(&self, query: Q, input: Q::Input) -> &'cx Q::Output {
         let input_hash = self.hash(query, &input);
         if self
