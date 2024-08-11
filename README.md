@@ -11,6 +11,8 @@ It started with me wanting to learn how [rustc's query system](https://rustc-dev
 and I decided to implement a system very similar to it myself.
 Turns out, I'm quite happy with it and started documenting it and now it's this library.
 
+Note: this crate uses a nightly feature: `#![feature(macro_metavar_expr)]`, so it only works on nightly for now.
+
 # What is this?
 
 Core to this library is the concept of a query. Just like in rustc.
