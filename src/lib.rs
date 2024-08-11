@@ -1,4 +1,5 @@
 #![feature(macro_metavar_expr)]
+#![doc = include_str!("../README.md")]
 
 use siphasher::sip128::SipHasher13;
 
@@ -19,7 +20,6 @@ pub use query::{ErasedQueryRun, Query, QueryMode};
 pub use query_parameter::TypeErasedQueryParam;
 
 pub type QueryHasher = SipHasher13;
-
 
 #[doc(hidden)]
 #[macro_export]
@@ -50,17 +50,16 @@ macro_rules! unit_if_empty {
     };
     (ref $($tt: tt)*) => {
         &'cx ($($tt)*)
-    };   
+    };
     ($($tt: tt)*) => {
         $($tt)*
     };
 }
 
-
 #[doc(hidden)]
 #[macro_export]
 macro_rules! define_query_internal {
-     ( 
+     (
         @
         // left to parse
         [
@@ -94,10 +93,10 @@ macro_rules! define_query_internal {
                 [
                     [
                         fn mode(&self) -> $crate::QueryMode {
-                            $crate::query::QueryMode::Always
+                            $crate::QueryMode::Always
                         }
                     ]
-                    $([$($filteredattr)*])* 
+                    $([$($filteredattr)*])*
                 ];
                 [$name];
                 [$lt];
@@ -108,7 +107,7 @@ macro_rules! define_query_internal {
                 [$block]
         )
     };
-    ( 
+    (
         @
         // left to parse
         [
@@ -139,13 +138,13 @@ macro_rules! define_query_internal {
                     $([$($unparsed)*])*
                 ];
                 [ $([$($passedattr)*])* ];
-                [ 
+                [
                     [
                         fn mode(&self) -> $crate::QueryMode {
-                            $crate::query::QueryMode::Generation
+                            $crate::QueryMode::Generation
                         }
                     ]
-                    $([$($filteredattr)*])* 
+                    $([$($filteredattr)*])*
                 ];
                 [$name];
                 [$lt];
@@ -156,7 +155,7 @@ macro_rules! define_query_internal {
                 [$block]
         )
     };
-    ( 
+    (
         @
         // left to parse
         [
@@ -188,8 +187,8 @@ macro_rules! define_query_internal {
                     $([$($unparsed)*])*
                 ];
                 [ $([$($passedattr)*])* ];
-                [ 
-                    $([$($filteredattr)*])* 
+                [
+                    $([$($filteredattr)*])*
                 ];
                 [$name];
                 [$lt];
@@ -200,7 +199,7 @@ macro_rules! define_query_internal {
                 [$block]
         )
     };
-    ( 
+    (
         @
         // left to parse
         [
@@ -242,7 +241,7 @@ macro_rules! define_query_internal {
         )
     };
 
-    ( 
+    (
         @
         // left to parse
         [];
@@ -272,7 +271,7 @@ macro_rules! define_query_internal {
                 {
                     #[derive(Copy, Clone)]
                     #[allow(non_camel_case_types)]
-                    struct Q; 
+                    struct Q;
 
                     impl<$lt> $crate::Query<$lt> for Q {
                         type Input = $crate::tup_or_empty!($($param)*);
@@ -342,7 +341,7 @@ macro_rules! define_query_internal {
 ///
 /// The output and input of queries are cached,
 /// and its dependencies are automatically tracked.
-/// 
+///
 /// To run a query, including all the cache mechanics, simply call it.
 /// The only requirement is that you give it an argument of `&Context<'cx>`.
 /// Internally, the function you wrote is actually wrapped in such a way that caching
@@ -633,7 +632,7 @@ mod tests {
 
         some_other_query(&cx, order.clone(), counter1.clone(), counter2.clone());
         cx.next_generation();
-        some_other_query(&cx,order.clone(), counter1.clone(), counter2.clone());
+        some_other_query(&cx, order.clone(), counter1.clone(), counter2.clone());
 
         assert!(order.is_empty());
         assert_eq!(counter1.get(), 1);

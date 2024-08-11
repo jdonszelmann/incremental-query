@@ -2,6 +2,9 @@
 name = "incremental-query"
 version = "0.1.0"
 edition = "2021"
+description = "implementation of an incremental compilation algorithm similar to rustc's"
+authors = ["Jonathan Dönszelmann <jonathan@donsz.nl>"]
+license = "MIT or Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -9,5 +12,7 @@ edition = "2021"
 siphasher = "1.0.1"
 bumpalo = "3.16.0"
 tracing = "0.1.40"
+
+[dev-dependencies]
 tracing-subscriber = { version = "0.3.18", features = ["fmt", "env-filter"] }
 rand = "0.8.5"
