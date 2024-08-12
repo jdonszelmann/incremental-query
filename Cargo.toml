@@ -1,6 +1,6 @@
 [package]
 name = "incremental-query"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "implementation of an incremental compilation algorithm similar to rustc's"
 authors = ["Jonathan Dönszelmann <jonathan@donsz.nl>"]

@@ -16,7 +16,7 @@ Note: this crate uses a nightly feature: `#![feature(macro_metavar_expr)]`, so i
 # What is this?
 
 Core to this library is the concept of a query. Just like in rustc.
-A query is just likea a normal function, and you can call it as if it is.
+A query is just like a normal function, and you can call it as if it is.
 There are just some restrictions to what the parameters and return type of the function can be.
 However, when you call them, a lot more happens than with a normal function.
 
@@ -35,6 +35,17 @@ any (pure) query depending on it will be automatically rerun when its result is 
 Also, when an impure query is rerun, and a dependent chain of queries updates, but
 at any point we notice that a result didn't change, the chain of reruns is stopped to 
 save as much computation time as possible.
+
+You might see how this is useful for incremental compilation. One query reads a file, another parses an ast,
+and yet another does a part of typechecking. Rustc has hundreds of queries. If a file hasn't changed, the read file
+query notices. Then we don't have to run the parse query again, awesome! Typechecking might depend on multiple files,
+but if none of the files it does depend on change, we don't have to rerun it either.
+
+At this moment, this library doesn't yet support serializing the query cache to a file. 
+Some day it might. If it did, the cache would be useful for even longer.
+
+The following section is about this library specifically. Even if you're just interested in [how it works](#how-does-it-work),
+it might stil be useful to read this so you understand the notation used in the examples.
 
 # How can I use it?
 
