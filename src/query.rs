@@ -6,18 +6,18 @@ use super::{
     query_parameter::{QueryParameter, TypeErasedQueryParam},
 };
 
-pub trait Query<'cx>: 'static + Copy + Clone {
+pub trait Query<'cx, T>: 'static + Copy + Clone {
     type Input: QueryParameter + 'cx;
     type Output: QueryParameter + 'cx;
     const NAME: &'static str;
 
-    fn get_run_fn() -> ErasedQueryRun;
+    fn get_run_fn() -> ErasedQueryRun<T>;
 
     fn mode(&self) -> QueryMode {
         QueryMode::Cache
     }
 
-    fn run(cx: &Context<'cx>, i: &Self::Input) -> Self::Output;
+    fn run(cx: &Context<'cx, T>, i: &Self::Input) -> Self::Output;
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
@@ -27,14 +27,14 @@ pub enum QueryColor {
     Unknown,
 }
 
-pub type ErasedQueryRun = for<'cx> fn(
-    &Context<'cx>,
+pub type ErasedQueryRun<T = ()> = for<'cx> fn(
+    &Context<'cx, T>,
     TypeErasedQueryParam<'cx>,
     &dyn Fn(u128) -> bool,
 ) -> (Option<TypeErasedQueryParam<'cx>>, u128);
 
-pub struct QueryInstance<'cx> {
-    pub run: ErasedQueryRun,
+pub struct QueryInstance<'cx, T> {
+    pub run: ErasedQueryRun<T>,
 
     pub name: &'static str,
 
@@ -53,7 +53,7 @@ pub struct QueryInstance<'cx> {
     pub transitively_has_always_dep: bool,
 }
 
-impl Display for QueryInstance<'_> {
+impl<T> Display for QueryInstance<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}#{:.4}", self.name, self.output_hash.to_string())
     }

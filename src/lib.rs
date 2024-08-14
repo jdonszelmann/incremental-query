@@ -77,10 +77,12 @@ macro_rules! define_query_internal {
             [$($filteredattr: tt)*]
         )*];
         // function
+        [$vis: vis];
         [$name: ident];
         [$lt: lifetime];
         [$cxname: ident];
         [$lt2: lifetime];
+        [$($ty: ty)?];
         [$($paramname: ident: &$param: ty),*];
         [$($ret: ty)?];
         [$block: block]
@@ -98,10 +100,12 @@ macro_rules! define_query_internal {
                     ]
                     $([$($filteredattr)*])*
                 ];
+                [$vis];
                 [$name];
                 [$lt];
                 [$cxname];
                 [$lt2];
+                [$($ty: ty)?];
                 [$($paramname: &$param),*];
                 [$($ret)?];
                 [$block]
@@ -125,10 +129,12 @@ macro_rules! define_query_internal {
             [$($filteredattr: tt)*]
         )*];
         // function
+        [$vis: vis];
         [$name: ident];
         [$lt: lifetime];
         [$cxname: ident];
         [$lt2: lifetime];
+        [$($ty: ty)?];
         [$($paramname: ident: &$param: ty),*];
         [$($ret: ty)?];
         [$block: block]
@@ -146,10 +152,12 @@ macro_rules! define_query_internal {
                     ]
                     $([$($filteredattr)*])*
                 ];
+                [$vis];
                 [$name];
                 [$lt];
                 [$cxname];
                 [$lt2];
+                [$($ty)?];
                 [$($paramname: &$param),*];
                 [$($ret)?];
                 [$block]
@@ -173,10 +181,12 @@ macro_rules! define_query_internal {
             [$($filteredattr: tt)*]
         )*];
         // function
+        [$vis: vis];
         [$name: ident];
         [$lt: lifetime];
         [$cxname: ident];
         [$lt2: lifetime];
+        [$($ty: ty)?];
         [$($paramname: ident: &$param: ty),*];
         [$($ret: ty)?];
         [$block: block]
@@ -190,10 +200,12 @@ macro_rules! define_query_internal {
                 [
                     $([$($filteredattr)*])*
                 ];
+                [$vis];
                 [$name];
                 [$lt];
                 [$cxname];
                 [$lt2];
+                [$($ty)?];
                 [$($paramname: &$param),*];
                 [$($ret)?];
                 [$block]
@@ -217,10 +229,12 @@ macro_rules! define_query_internal {
             [$($filteredattr: tt)*]
         )*];
         // function
+        [$vis: vis];
         [$name: ident];
         [$lt: lifetime];
         [$cxname: ident];
         [$lt2: lifetime];
+        [$($ty: ty)?];
         [$($paramname: ident: &$param: ty),*];
         [$($ret: ty)?];
         [$block: block]
@@ -231,10 +245,12 @@ macro_rules! define_query_internal {
                 ];
                 [ $([$($passedattr)*])* ];
                 [ $([$($filteredattr)*])* ];
+                [$vis];
                 [$name];
                 [$lt];
                 [$cxname];
                 [$lt2];
+                [$($ty)?];
                 [$($paramname: &$param),*];
                 [$($ret)?];
                 [$block]
@@ -254,17 +270,19 @@ macro_rules! define_query_internal {
             [$($filteredattr: tt)*]
         )*];
         // function
+        [$vis: vis];
         [$name: ident];
         [$lt: lifetime];
         [$cxname: ident];
         [$lt2: lifetime];
+        [$($ty: ty)?];
         [$($paramname: ident: &$param: ty),*];
         [$($ret: ty)?];
         [$block: block]
     ) => {
             #[allow(unused_parens)]
-            pub fn $name<'cx>(
-                cx: &$crate::Context<$lt2>,
+            $vis fn $name<'cx>(
+                cx: &$crate::Context<$lt2, $crate::unit_if_empty!($($ty)?)>,
                 $($paramname: $param),*
             )-> $crate::unit_if_empty!(ref $($ret)?) {
                 #[warn(unused_parens)]
@@ -273,22 +291,22 @@ macro_rules! define_query_internal {
                     #[allow(non_camel_case_types)]
                     struct Q;
 
-                    impl<$lt> $crate::Query<$lt> for Q {
+                    impl<$lt> $crate::Query<$lt, $crate::unit_if_empty!($($ty)?)> for Q {
                         type Input = $crate::tup_or_empty!($($param)*);
                         type Output = $crate::unit_if_empty!($($ret)?);
 
                         const NAME: &'static str = stringify!($name);
 
-                        fn get_run_fn() -> $crate::ErasedQueryRun {
+                        fn get_run_fn() -> $crate::ErasedQueryRun<$crate::unit_if_empty!($($ty)?)> {
                             fn run<'cx>(
-                                cx: &$crate::Context<'cx>,
+                                cx: &$crate::Context<'cx, $crate::unit_if_empty!($($ty)?)>,
                                 input: $crate::TypeErasedQueryParam<'cx>,
                                 should_alloc: &dyn Fn(u128) -> bool,
                             ) -> (Option<$crate::TypeErasedQueryParam<'cx>>, u128) {
                                 // safety: we know thatcx is Q::Input here because this function is generated
                                 // together with the definition of the query
                                 let input: &$crate::tup_or_empty!($($param)*) = unsafe{input.get_ref()};
-                                let output = <Q as $crate::Query<'cx>>::run(cx, input);
+                                let output = <Q as $crate::Query<'cx, $crate::unit_if_empty!($($ty)?)>>::run(cx, input);
 
                                 let output_hash = cx.hash(Q, &output);
                                 if should_alloc(output_hash) {
@@ -303,7 +321,7 @@ macro_rules! define_query_internal {
 
                         $($($filteredattr)*)*
 
-                        fn run($cxname: &$crate::Context<$lt2>, $crate::tup_or_empty!($($paramname)*): &Self::Input) -> Self::Output $block
+                        fn run($cxname: &$crate::Context<$lt2,$crate::unit_if_empty!($($ty)?)>, $crate::tup_or_empty!($($paramname)*): &Self::Input) -> Self::Output $block
                     }
 
                     cx.query(Q, $crate::tup_or_empty!($($paramname)*))
@@ -371,9 +389,9 @@ macro_rules! define_query {
     (
         $(
             $(#[$($attr: tt)*])*
-
+            pub
             fn $name: ident <$lt: lifetime>
-            ($cxname: ident: &Context<$lt2: lifetime> $(,$paramname: ident: &$param: ty)* $(,)?)
+            ($cxname: ident: &Context<$lt2: lifetime $(, $ty: ty)?> $(,$paramname: ident: &$param: ty)* $(,)?)
             $(-> $ret: ty)?
             $block: block
         )*
@@ -385,10 +403,40 @@ macro_rules! define_query {
                 ];
                 [];
                 [];
+                [pub];
                 [$name];
                 [$lt];
                 [$cxname];
                 [$lt2];
+                [$($ty)?];
+                [$($paramname: &$param),*];
+                [$($ret)?];
+                [$block]
+            );
+        )*
+    };
+    (
+        $(
+            $(#[$($attr: tt)*])*
+            fn $name: ident <$lt: lifetime>
+            ($cxname: ident: &Context<$lt2: lifetime $(, $ty: ty)?> $(,$paramname: ident: &$param: ty)* $(,)?)
+            $(-> $ret: ty)?
+            $block: block
+        )*
+    ) => {
+        $(
+            $crate::define_query_internal!(@
+                [
+                    $([$($attr)*])*
+                ];
+                [];
+                [];
+                [pub(self)];
+                [$name];
+                [$lt];
+                [$cxname];
+                [$lt2];
+                [$($ty)?];
                 [$($paramname: &$param),*];
                 [$($ret)?];
                 [$block]
@@ -436,6 +484,7 @@ mod tests {
         cell::{Cell, RefCell},
         collections::VecDeque,
         hash::Hash,
+        ops::Deref,
         rc::Rc,
     };
 
@@ -780,31 +829,32 @@ mod tests {
     #[should_panic]
     fn long_cycle() {
         define_query! {
-            fn e<'cx>(cx: &Context<'cx>, r: &u64) -> bool {
+            fn e<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
               *a(cx, *r)
             }
 
-            fn d<'cx>(cx: &Context<'cx>, r: &u64) -> bool {
+            fn d<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
               *e(cx, *r)
             }
 
-            fn c<'cx>(cx: &Context<'cx>, r: &u64) -> bool {
+            fn c<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
               *d(cx, *r)
             }
 
-            fn b<'cx>(cx: &Context<'cx>, r: &u64) -> bool {
+            fn b<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
               *c(cx, *r)
             }
 
-            fn a<'cx>(cx: &Context<'cx>, r: &u64) -> bool {
+            fn a<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
               *b(cx, *r)
             }
         }
         log();
 
         let storage = Storage::new();
-        let cx = Context::new(&storage);
+        let cx = Context::with_data(&storage, 12);
         a(&cx, 10);
+        assert_eq!(cx.deref(), &12);
     }
 
     #[test]

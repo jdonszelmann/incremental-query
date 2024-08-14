@@ -5,6 +5,7 @@ use std::{
     hash::Hash,
     mem,
     num::NonZeroUsize,
+    ops::Deref,
 };
 
 use siphasher::sip128::Hasher128;
@@ -21,8 +22,8 @@ use super::{
 };
 
 // inspired by https://smallcultfollowing.com/babysteps/blog/2015/04/06/modeling-graphs-in-rust-using-vector-indices/
-struct Node<'cx> {
-    query_instance: QueryInstance<'cx>,
+struct Node<'cx, T> {
+    query_instance: QueryInstance<'cx, T>,
 
     // 1-based indices in the edges array
     first_edge_index: Option<NonZeroUsize>,
@@ -42,7 +43,7 @@ struct OutgoingEdgeIterator {
 }
 
 impl OutgoingEdgeIterator {
-    fn next_node(&mut self, cx: &Context) -> Option<usize> {
+    fn next_node<T>(&mut self, cx: &Context<T>) -> Option<usize> {
         self.next_node_inner(&cx.inner.borrow().edges)
     }
 
@@ -109,11 +110,11 @@ impl CycleDetection {
     }
 }
 
-struct Inner<'cx> {
+struct Inner<'cx, T> {
     // index in the nodes array
     curr: Option<usize>,
 
-    nodes: Vec<Node<'cx>>,
+    nodes: Vec<Node<'cx, T>>,
     edges: Vec<Edge>,
 
     roots: Vec<u128>,
@@ -128,11 +129,11 @@ struct Inner<'cx> {
     cache_enabled: bool,
 }
 
-impl<'cx> Inner<'cx> {
-    fn get_node(&self, node: usize) -> &Node<'cx> {
+impl<'cx, T> Inner<'cx, T> {
+    fn get_node(&self, node: usize) -> &Node<'cx, T> {
         &self.nodes[node]
     }
-    fn get_node_mut(&mut self, node: usize) -> &mut Node<'cx> {
+    fn get_node_mut(&mut self, node: usize) -> &mut Node<'cx, T> {
         &mut self.nodes[node]
     }
 
@@ -159,11 +160,11 @@ impl<'cx> Inner<'cx> {
     }
 
     fn outgoing_edges(&self, node: usize) -> OutgoingEdgeIterator {
-        outgoing_edges(node, &self.nodes, &self.edges)
+        outgoing_edges::<T>(node, &self.nodes, &self.edges)
     }
 }
 
-fn outgoing_edges(node: usize, nodes: &[Node], edges: &[Edge]) -> OutgoingEdgeIterator {
+fn outgoing_edges<T>(node: usize, nodes: &[Node<T>], edges: &[Edge]) -> OutgoingEdgeIterator {
     let node = &nodes[node];
     let first_edge_index = node.first_edge_index;
 
@@ -174,14 +175,28 @@ fn outgoing_edges(node: usize, nodes: &[Node], edges: &[Edge]) -> OutgoingEdgeIt
 
 /// The context is the most important part of incremental compilation,
 /// the structure through which queries are run and that caches query invocations.
-pub struct Context<'cx> {
-    inner: RefCell<Inner<'cx>>,
-
+pub struct Context<'cx, T = ()> {
+    inner: RefCell<Inner<'cx, T>>,
     pub storage: &'cx Storage,
+    pub data: T,
 }
 
-impl<'cx> Context<'cx> {
+impl<T> Deref for Context<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<'cx> Context<'cx, ()> {
     pub fn new(storage: &'cx Storage) -> Self {
+        Self::with_data(storage, ())
+    }
+}
+
+impl<'cx, T> Context<'cx, T> {
+    pub fn with_data(storage: &'cx Storage, data: T) -> Self {
         Self {
             storage,
             inner: RefCell::new(Inner {
@@ -201,6 +216,7 @@ impl<'cx> Context<'cx> {
                 roots: Vec::new(),
                 cache_enabled: true,
             }),
+            data,
         }
     }
 
@@ -226,7 +242,7 @@ impl<'cx> Context<'cx> {
     ///
     /// After this, all objects are allocated in `new_storage` and you can delete
     /// the old backing storage to actually save space.
-    pub fn gc(self, new_storage: &Storage) -> Context<'_> {
+    pub fn gc(self, new_storage: &Storage) -> Context<'_, T> {
         let Inner {
             curr,
             mut nodes,
@@ -256,7 +272,7 @@ impl<'cx> Context<'cx> {
             let new_idx = nodes_index_map.len();
             nodes_index_map.insert(old_idx, new_idx);
 
-            let mut outgoing = outgoing_edges(old_idx, &nodes, &edges);
+            let mut outgoing = outgoing_edges::<T>(old_idx, &nodes, &edges);
             while let Some(node) = outgoing.next_node_inner(&edges) {
                 todo.push_back(node);
             }
@@ -270,7 +286,7 @@ impl<'cx> Context<'cx> {
         });
 
         for node_idx in 0..nodes.len() {
-            let mut outgoing = outgoing_edges(node_idx, &nodes, &edges);
+            let mut outgoing = outgoing_edges::<T>(node_idx, &nodes, &edges);
             while let Some((edge, old_idx)) = outgoing.next_edge(&edges) {
                 let new_idx = edges_index_map.len();
                 edges_index_map.insert(old_idx.get(), new_idx);
@@ -339,6 +355,7 @@ impl<'cx> Context<'cx> {
                 cache_enabled,
             }),
             storage: new_storage,
+            data: self.data,
         }
     }
 
@@ -349,7 +366,7 @@ impl<'cx> Context<'cx> {
     /// some fields that don't actually grow are not counted.
     pub fn size(&self) -> usize {
         let inner = self.inner.borrow();
-        let nodes_size = inner.nodes.len() * mem::size_of::<Node>();
+        let nodes_size = inner.nodes.len() * mem::size_of::<Node<T>>();
         let edges_size = inner.edges.len() * mem::size_of::<Edge>();
         let arena_size = self.storage.size();
         let lookup_size = inner.lookup.len() * (mem::size_of::<usize>() + mem::size_of::<u128>());
@@ -364,7 +381,7 @@ impl<'cx> Context<'cx> {
 
     /// Used in macros
     #[doc(hidden)]
-    pub fn hash<Q: Query<'cx>>(&self, query: Q, input: &impl QueryParameter) -> u128 {
+    pub fn hash<Q: Query<'cx, T>>(&self, query: Q, input: &impl QueryParameter) -> u128 {
         let mut hasher = QueryHasher::new();
         // also hash the query, so that paramters to different
         // queries don't have hash collisions.
@@ -593,7 +610,7 @@ impl<'cx> Context<'cx> {
     }
 
     #[doc(hidden)]
-    pub fn query<Q: Query<'cx>>(&self, query: Q, input: Q::Input) -> &'cx Q::Output {
+    pub fn query<Q: Query<'cx, T>>(&self, query: Q, input: Q::Input) -> &'cx Q::Output {
         let input_hash = self.hash(query, &input);
         if self
             .inner
