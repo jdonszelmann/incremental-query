@@ -50,18 +50,17 @@ it might stil be useful to read this so you understand the notation used in the 
 # How can I use it?
 
 Queries are defined *almost* like normal functions.
-The only restriction is that they must be serounded with a `define_query!` macro invocation.
+The only restriction is that they must be tagged with a `#[query]` attribute.
 
 ```rust
-use incremental_query::{Context, define_query};
+use incremental_query::{Context, query, rerun};
 # use rand::{thread_rng, Rng};
 
-define_query! {
-    /// This is a query that retuns a random number.
-    #[rerun(always)]
-    fn random<'cx>(_cx: &Context<'cx>) -> u64 {
-        thread_rng().gen_range(0..u64::MAX)
-    }
+/// This is a query that retuns a random number.
+#[query]
+#[rerun(always)]
+fn random<'cx>(_cx: &Context<'cx>) -> u64 {
+    thread_rng().gen_range(0..u64::MAX)
 }
 ```
 
@@ -78,16 +77,17 @@ To invoke a query, you can now simply call it:
 
 ```
 use incremental_query::{Context, Storage};
-# use incremental_query::define_query;
+# use incremental_query::{query, rerun};
 # use rand::{thread_rng, Rng};
 # 
-# define_query! {
-#     /// This is a query that retuns a random number.
-#     #[rerun(always)]
-#     fn random<'cx>(_cx: &Context<'cx>) -> u64 {
-#         thread_rng().gen_range(0..u64::MAX)
-#     }
+# 
+# /// This is a query that retuns a random number.
+# #[query]
+# #[rerun(always)]
+# fn random<'cx>(_cx: &Context<'cx>) -> u64 {
+#     thread_rng().gen_range(0..u64::MAX)
 # }
+# 
 #
 // instantiate a storage object that holds the cached data
 let storage = Storage::new();
@@ -125,27 +125,29 @@ the results will be reflected.
 
 For example, here:
 ```rust
-# use incremental_query::{Context, Storage, define_query};
-define_query! {
-    #[rerun(generation)]
-    fn boolean_query<'cx>(_cx: &Context<'cx>) -> bool {
-        // first return true, then in the 2nd generation false
-#       true
-    }
+# use incremental_query::{Context, Storage, query, rerun};
+#[query]
+#[rerun(generation)]
+fn boolean_query<'cx>(_cx: &Context<'cx>) -> bool {
+    // first return true, then in the 2nd generation false
+#   true
+}
 
-    fn one<'cx>(_cx: &Context<'cx>) -> u64 {
-        1
-    }
-    fn two<'cx>(_cx: &Context<'cx>) -> u64 {
-        2
-    }
+#[query]
+fn one<'cx>(_cx: &Context<'cx>) -> u64 {
+    1
+}
+#[query]
+fn two<'cx>(_cx: &Context<'cx>) -> u64 {
+    2
+}
 
-    fn conditional<'cx>(cx: &Context<'cx>, ) -> u64 {
-        if *boolean_query(cx) {
-            *one(cx)
-        } else {
-            *two(cx)
-        }
+#[query]
+fn conditional<'cx>(cx: &Context<'cx>, ) -> u64 {
+    if *boolean_query(cx) {
+        *one(cx)
+    } else {
+        *two(cx)
     }
 }
 
@@ -177,7 +179,7 @@ I'll try my best to explain the algorithm here again, and maybe simplify some of
 
 > If you've read the rustc dev guide, you may have wondered the following: it uses the word query for two
 > different concepts interchangably. It took me a while to realize that.
-> First of all, a query is a definition of a query, like the one I put in `define_query!`.
+> First of all, a query is a definition of a query, a function tagged with `#[query]`
 > However, in the guide it also refers to the instance of a query. When it says that a query cannot depend on itself,
 > it doesn't mean that some `type_of(a)` query cannot execute `type_of(b)`. It just means that you can't make a cycle where
 > `type_of(a)` depends recursively on `type_of(a)` again. Similarly, when the guide says a query is cached,
@@ -247,27 +249,29 @@ dependency list. That's because the dependency list might change!
 To adapt an example of the [rustc dev guide](https://rustc-dev-guide.rust-lang.org/queries/incremental-compilation.html#the-query-dag):
 
 ```rust
-# use incremental_query::{Context, Storage, define_query};
-define_query! {
-    #[rerun(generation)]
-    fn boolean_query<'cx>(_cx: &Context<'cx>) -> bool {
-        // first return true, then in the 2nd generation false
-#       true
-    }
+# use incremental_query::{Context, Storage, query, rerun};
+#[query]
+#[rerun(generation)]
+fn boolean_query<'cx>(_cx: &Context<'cx>) -> bool {
+    // first return true, then in the 2nd generation false
+#   true
+}
 
-    fn one<'cx>(_cx: &Context<'cx>) -> u64 {
-        1
-    }
-    fn two<'cx>(_cx: &Context<'cx>) -> u64 {
-        2
-    }
+#[query]
+fn one<'cx>(_cx: &Context<'cx>) -> u64 {
+    1
+}
+#[query]
+fn two<'cx>(_cx: &Context<'cx>) -> u64 {
+    2
+}
 
-    fn conditional<'cx>(cx: &Context<'cx>, ) -> u64 {
-        if *boolean_query(cx) {
-            *one(cx)
-        } else {
-            *two(cx)
-        }
+#[query]
+fn conditional<'cx>(cx: &Context<'cx>, ) -> u64 {
+    if *boolean_query(cx) {
+        *one(cx)
+    } else {
+        *two(cx)
     }
 }
 

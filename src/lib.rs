@@ -9,6 +9,8 @@ mod query;
 mod query_parameter;
 mod storage;
 
+pub use incremental_query_macros::*;
+
 pub use context::Context;
 pub use query_parameter::QueryParameter;
 pub use storage::Storage;
@@ -20,430 +22,6 @@ pub use query::{ErasedQueryRun, Query, QueryMode};
 pub use query_parameter::TypeErasedQueryParam;
 
 pub type QueryHasher = SipHasher13;
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! filter_attrs {
-    (rerun $($tt:tt)*) => {};
-    ($($tt:tt)*) => {$($tt)*};
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! tup_or_empty {
-    () => {
-        ()
-    };
-    ($($param: tt)*) => {
-        ($($param),*,)
-    };
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! unit_if_empty {
-    () => {
-        ()
-    };
-    (()) => {
-        ()
-    };
-    (ref $($tt: tt)*) => {
-        &'cx ($($tt)*)
-    };
-    ($($tt: tt)*) => {
-        $($tt)*
-    };
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! define_query_internal {
-     (
-        @
-        // left to parse
-        [
-            [rerun(always)]
-            $(
-                [$($unparsed: tt)*]
-            )*
-        ];
-        // attributes passed to function
-        [$(
-            [$($passedattr: tt)*
-        ])*];
-        // filtered/parsed attributes
-        [$(
-            [$($filteredattr: tt)*]
-        )*];
-        // function
-        [$vis: vis];
-        [$name: ident];
-        [$lt: lifetime];
-        [$cxname: ident];
-        [$lt2: lifetime];
-        [$($ty: ty)?];
-        [$($paramname: ident: &$param: ty),*];
-        [$($ret: ty)?];
-        [$block: block]
-    ) => {
-        $crate::define_query_internal!(@
-                [
-                    $([$($unparsed)*])*
-                ];
-                [ $([$($passedattr)*])* ];
-                [
-                    [
-                        fn mode(&self) -> $crate::QueryMode {
-                            $crate::QueryMode::Always
-                        }
-                    ]
-                    $([$($filteredattr)*])*
-                ];
-                [$vis];
-                [$name];
-                [$lt];
-                [$cxname];
-                [$lt2];
-                [$($ty: ty)?];
-                [$($paramname: &$param),*];
-                [$($ret)?];
-                [$block]
-        )
-    };
-    (
-        @
-        // left to parse
-        [
-            [rerun(generation)]
-            $(
-                [$($unparsed: tt)*]
-            )*
-        ];
-        // attributes passed to function
-        [$(
-            [$($passedattr: tt)*
-        ])*];
-        // filtered/parsed attributes
-        [$(
-            [$($filteredattr: tt)*]
-        )*];
-        // function
-        [$vis: vis];
-        [$name: ident];
-        [$lt: lifetime];
-        [$cxname: ident];
-        [$lt2: lifetime];
-        [$($ty: ty)?];
-        [$($paramname: ident: &$param: ty),*];
-        [$($ret: ty)?];
-        [$block: block]
-    ) => {
-        $crate::define_query_internal!(@
-                [
-                    $([$($unparsed)*])*
-                ];
-                [ $([$($passedattr)*])* ];
-                [
-                    [
-                        fn mode(&self) -> $crate::QueryMode {
-                            $crate::QueryMode::Generation
-                        }
-                    ]
-                    $([$($filteredattr)*])*
-                ];
-                [$vis];
-                [$name];
-                [$lt];
-                [$cxname];
-                [$lt2];
-                [$($ty)?];
-                [$($paramname: &$param),*];
-                [$($ret)?];
-                [$block]
-        )
-    };
-    (
-        @
-        // left to parse
-        [
-            [rerun $($rest:tt)*]
-            $(
-                [$($unparsed: tt)*]
-            )*
-        ];
-        // attributes passed to function
-        [$(
-            [$($passedattr: tt)*
-        ])*];
-        // filtered/parsed attributes
-        [$(
-            [$($filteredattr: tt)*]
-        )*];
-        // function
-        [$vis: vis];
-        [$name: ident];
-        [$lt: lifetime];
-        [$cxname: ident];
-        [$lt2: lifetime];
-        [$($ty: ty)?];
-        [$($paramname: ident: &$param: ty),*];
-        [$($ret: ty)?];
-        [$block: block]
-    ) => {
-        compile_error!(concat!("#[rerun", stringify!($($rest)*), "] is not valid: valid attributes are #[rerun(always)] and #[rerun(generation)]"));
-        $crate::define_query_internal!(@
-                [
-                    $([$($unparsed)*])*
-                ];
-                [ $([$($passedattr)*])* ];
-                [
-                    $([$($filteredattr)*])*
-                ];
-                [$vis];
-                [$name];
-                [$lt];
-                [$cxname];
-                [$lt2];
-                [$($ty)?];
-                [$($paramname: &$param),*];
-                [$($ret)?];
-                [$block]
-        )
-    };
-    (
-        @
-        // left to parse
-        [
-            [$($any: tt)*]
-            $(
-                [$($unparsed: tt)*]
-            )*
-        ];
-        // attributes passed to function
-        [$(
-            [$($passedattr: tt)*
-        ])*];
-        // filtered/parsed attributes
-        [$(
-            [$($filteredattr: tt)*]
-        )*];
-        // function
-        [$vis: vis];
-        [$name: ident];
-        [$lt: lifetime];
-        [$cxname: ident];
-        [$lt2: lifetime];
-        [$($ty: ty)?];
-        [$($paramname: ident: &$param: ty),*];
-        [$($ret: ty)?];
-        [$block: block]
-    ) => {
-        $crate::define_query_internal!(@
-                [
-                    $([$($unparsed)*])*
-                ];
-                [ $([$($passedattr)*])* ];
-                [ $([$($filteredattr)*])* ];
-                [$vis];
-                [$name];
-                [$lt];
-                [$cxname];
-                [$lt2];
-                [$($ty)?];
-                [$($paramname: &$param),*];
-                [$($ret)?];
-                [$block]
-        )
-    };
-
-    (
-        @
-        // left to parse
-        [];
-        // attributes passed to function
-        [$(
-            [$($passedattr: tt)*
-        ])*];
-        // filtered/parsed attributes
-        [$(
-            [$($filteredattr: tt)*]
-        )*];
-        // function
-        [$vis: vis];
-        [$name: ident];
-        [$lt: lifetime];
-        [$cxname: ident];
-        [$lt2: lifetime];
-        [$($ty: ty)?];
-        [$($paramname: ident: &$param: ty),*];
-        [$($ret: ty)?];
-        [$block: block]
-    ) => {
-            #[allow(unused_parens)]
-            $vis fn $name<'cx>(
-                cx: &$crate::Context<$lt2, $crate::unit_if_empty!($($ty)?)>,
-                $($paramname: $param),*
-            )-> $crate::unit_if_empty!(ref $($ret)?) {
-                #[warn(unused_parens)]
-                {
-                    #[derive(Copy, Clone)]
-                    #[allow(non_camel_case_types)]
-                    struct Q;
-
-                    impl<$lt> $crate::Query<$lt, $crate::unit_if_empty!($($ty)?)> for Q {
-                        type Input = $crate::tup_or_empty!($($param)*);
-                        type Output = $crate::unit_if_empty!($($ret)?);
-
-                        const NAME: &'static str = stringify!($name);
-
-                        fn get_run_fn() -> $crate::ErasedQueryRun<$crate::unit_if_empty!($($ty)?)> {
-                            fn run<'cx>(
-                                cx: &$crate::Context<'cx, $crate::unit_if_empty!($($ty)?)>,
-                                input: $crate::TypeErasedQueryParam<'cx>,
-                                should_alloc: &dyn Fn(u128) -> bool,
-                            ) -> (Option<$crate::TypeErasedQueryParam<'cx>>, u128) {
-                                // safety: we know thatcx is Q::Input here because this function is generated
-                                // together with the definition of the query
-                                let input: &$crate::tup_or_empty!($($param)*) = unsafe{input.get_ref()};
-                                let output = <Q as $crate::Query<'cx, $crate::unit_if_empty!($($ty)?)>>::run(cx, input);
-
-                                let output_hash = cx.hash(Q, &output);
-                                if should_alloc(output_hash) {
-                                    (Some($crate::TypeErasedQueryParam::new(cx.storage.alloc(output))), output_hash)
-                                } else {
-                                    (None, output_hash)
-                                }
-                            }
-
-                            run
-                        }
-
-                        $($($filteredattr)*)*
-
-                        fn run($cxname: &$crate::Context<$lt2,$crate::unit_if_empty!($($ty)?)>, $crate::tup_or_empty!($($paramname)*): &Self::Input) -> Self::Output $block
-                    }
-
-                    cx.query(Q, $crate::tup_or_empty!($($paramname)*))
-                }
-            }
-    }
-}
-
-/// A macro to define a query.
-///
-/// A query is a lot like a function, except for the small detail that
-/// you cannot call it. Instead queries expand to an identifier you can pass
-/// to a [`Context`](crate::Context) through which you can execute the function.
-///
-/// The following example should illustrate its syntax pretty well:
-///
-/// ```rust
-/// # use incremental_query::define_query;
-/// define_query! {
-///     // note: the lifetime <'cx> is required, (though you can choose a different name)
-///     fn some_query<'cx>(
-///         // this first parameter is required! though you can change the name it gets.
-///         cx: &Context<'cx>,
-///         // any number of parameters can follow, but they *must* be of type
-///         // &T where T: QueryParameter.
-///         param1: &u64, param2: &u64, param3: &u64) -> u64 {
-/// #       _ = (param2, param3);
-/// #       *param1
-///         // ...
-///     }
-///
-///     // more queries can follow
-/// }
-/// ```
-///
-/// The output and input of queries are cached,
-/// and its dependencies are automatically tracked.
-///
-/// To run a query, including all the cache mechanics, simply call it.
-/// The only requirement is that you give it an argument of `&Context<'cx>`.
-/// Internally, the function you wrote is actually wrapped in such a way that caching
-/// can occur.
-///
-/// ```rust
-/// # use incremental_query::{Context, define_query, Storage};
-/// define_query! {
-///     fn some_query<'cx>(cx: &Context<'cx>, param1: &u64, param2: &u64, param3: &u64) -> u64 {
-/// #       _ = (param2, param3);
-/// #       *param1
-///         // ...
-///     }
-/// }
-/// # let (param1, param2, param3) = (1, 2, 3);
-///
-/// let storage = Storage::new();
-///
-/// let cx = Context::new(&storage);
-/// let output = some_query(&cx, param1, param2, param3);
-/// ```
-///
-/// again, here `some_query` refers to the query that has to be run.
-/// It's definiton (using [`define_query`](crate::define_query))
-#[macro_export]
-macro_rules! define_query {
-    (
-        $(
-            $(#[$($attr: tt)*])*
-            pub
-            fn $name: ident <$lt: lifetime>
-            ($cxname: ident: &Context<$lt2: lifetime $(, $ty: ty)?> $(,$paramname: ident: &$param: ty)* $(,)?)
-            $(-> $ret: ty)?
-            $block: block
-        )*
-    ) => {
-        $(
-            $crate::define_query_internal!(@
-                [
-                    $([$($attr)*])*
-                ];
-                [];
-                [];
-                [pub];
-                [$name];
-                [$lt];
-                [$cxname];
-                [$lt2];
-                [$($ty)?];
-                [$($paramname: &$param),*];
-                [$($ret)?];
-                [$block]
-            );
-        )*
-    };
-    (
-        $(
-            $(#[$($attr: tt)*])*
-            fn $name: ident <$lt: lifetime>
-            ($cxname: ident: &Context<$lt2: lifetime $(, $ty: ty)?> $(,$paramname: ident: &$param: ty)* $(,)?)
-            $(-> $ret: ty)?
-            $block: block
-        )*
-    ) => {
-        $(
-            $crate::define_query_internal!(@
-                [
-                    $([$($attr)*])*
-                ];
-                [];
-                [];
-                [pub(self)];
-                [$name];
-                [$lt];
-                [$cxname];
-                [$lt2];
-                [$($ty)?];
-                [$($paramname: &$param),*];
-                [$($ret)?];
-                [$block]
-            );
-        )*
-    };
-}
 
 #[cfg(test)]
 pub fn log() {
@@ -488,8 +66,14 @@ mod tests {
         rc::Rc,
     };
 
-    use crate::{query_parameter::QueryParameter, storage::Storage, Context, QueryHasher};
+    use crate::{
+        query, query_parameter::QueryParameter, rerun, storage::Storage, Context, QueryHasher,
+    };
     use rand::{thread_rng, Rng};
+
+    pub mod incremental_query {
+        pub use crate::*;
+    }
 
     #[derive(Clone)]
     struct Counter(pub u64, Rc<Cell<usize>>);
@@ -546,10 +130,9 @@ mod tests {
 
     #[test]
     fn call_once() {
-        define_query! {
-            fn test<'cx>(_cx: &Context<'cx>, input: &Counter)  {
-                input.add();
-            }
+        #[query]
+        fn test<'cx>(_cx: &Context<'cx>, input: &Counter) {
+            input.add();
         }
 
         log();
@@ -563,10 +146,9 @@ mod tests {
 
     #[test]
     fn call_twice() {
-        define_query! {
-            fn called_twice<'cx>(_cx: &Context<'cx>, input: &Counter) {
-               input.add();
-            }
+        #[query]
+        fn called_twice<#[lt] 'a>(_cx: &Context<'a>, input: &Counter) {
+            input.add();
         }
         log();
 
@@ -582,16 +164,16 @@ mod tests {
 
     #[test]
     fn impure_rerun() {
-        define_query! {
-            #[rerun(always)]
-            fn random<'cx>(_cx: &Context<'cx>) -> u64 {
-                thread_rng().gen_range(0..u64::MAX)
-            }
+        #[query]
+        #[rerun(always)]
+        fn random<'cx>(_cx: &Context<'cx>) -> u64 {
+            thread_rng().gen_range(0..u64::MAX)
+        }
 
-            fn depends_on_impure<'cx>(cx: &Context<'cx>, inp: &Counter)  {
-                inp.add();
-                let _dep = random(cx);
-            }
+        #[query]
+        fn depends_on_impure<'cx>(cx: &Context<'cx>, inp: &Counter) {
+            inp.add();
+            let _dep = random(cx);
         }
 
         log();
@@ -608,23 +190,29 @@ mod tests {
 
     #[test]
     fn test_intvalue() {
-        define_query! {
-            #[rerun(always)]
-            fn intvalue<'cx>(_cx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
-                r.next()
-            }
+        #[query]
+        #[rerun(always)]
+        fn intvalue<'cx>(_cx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
+            r.next()
+        }
 
-            fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
-                let v = intvalue(cx, r.clone());
-                c2.add();
+        #[query]
+        fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
+            let v = intvalue(cx, r.clone());
+            c2.add();
 
-                v.is_positive()
-            }
+            v.is_positive()
+        }
 
-            fn some_other_query<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c1: &Counter, c2: &Counter)  {
-                c1.add();
-                sign_of(cx, r.clone(), c2.clone());
-            }
+        #[query]
+        fn some_other_query<'cx>(
+            cx: &Context<'cx>,
+            r: &ReturnInOrder<i64>,
+            c1: &Counter,
+            c2: &Counter,
+        ) {
+            c1.add();
+            sign_of(cx, r.clone(), c2.clone());
         }
         log();
 
@@ -650,23 +238,29 @@ mod tests {
 
     #[test]
     fn test_intvalue_generational() {
-        define_query! {
-            #[rerun(generation)]
-            fn intvalue<'cx>(_cx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
-                r.next()
-            }
+        #[query]
+        #[rerun(generation)]
+        fn intvalue<'cx>(_cx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
+            r.next()
+        }
 
-            fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
-                let v = intvalue(cx, r.clone());
-                c2.add();
+        #[query]
+        fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
+            let v = intvalue(cx, r.clone());
+            c2.add();
 
-                v.is_positive()
-            }
+            v.is_positive()
+        }
 
-            fn some_other_query<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c1: &Counter, c2: &Counter)  {
-                c1.add();
-                sign_of(cx, r.clone(), c2.clone());
-            }
+        #[query]
+        fn some_other_query<'cx>(
+            cx: &Context<'cx>,
+            r: &ReturnInOrder<i64>,
+            c1: &Counter,
+            c2: &Counter,
+        ) {
+            c1.add();
+            sign_of(cx, r.clone(), c2.clone());
         }
         log();
 
@@ -690,23 +284,29 @@ mod tests {
 
     #[test]
     fn test_intvalue_many_generation() {
-        define_query! {
-            #[rerun(generation)]
-            fn intvalue<'cx>(_cx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
-                r.next()
-            }
+        #[query]
+        #[rerun(generation)]
+        fn intvalue<'cx>(_cx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
+            r.next()
+        }
 
-            fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
-                let v = intvalue(cx, r.clone());
-                c2.add();
+        #[query]
+        fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
+            let v = intvalue(cx, r.clone());
+            c2.add();
 
-                v.is_positive()
-            }
+            v.is_positive()
+        }
 
-            fn some_other_query<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c1: &Counter, c2: &Counter)  {
-                c1.add();
-                sign_of(cx, r.clone(), c2.clone());
-            }
+        #[query]
+        fn some_other_query<'cx>(
+            cx: &Context<'cx>,
+            r: &ReturnInOrder<i64>,
+            c1: &Counter,
+            c2: &Counter,
+        ) {
+            c1.add();
+            sign_of(cx, r.clone(), c2.clone());
         }
         log();
 
@@ -732,22 +332,28 @@ mod tests {
 
     #[test]
     fn test_intvalue_assume_pure_wrong() {
-        define_query! {
-            fn intvalue<'cx>(_cx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
-                r.next()
-            }
+        #[query]
+        fn intvalue<'cx>(_cx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
+            r.next()
+        }
 
-            fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
-                let v = intvalue(cx, r.clone());
-                c2.add();
+        #[query]
+        fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c2: &Counter) -> bool {
+            let v = intvalue(cx, r.clone());
+            c2.add();
 
-                v.is_positive()
-            }
+            v.is_positive()
+        }
 
-            fn some_other_query<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>, c1: &Counter, c2: &Counter)  {
-                c1.add();
-                sign_of(cx, r.clone(), c2.clone());
-            }
+        #[query]
+        fn some_other_query<'cx>(
+            cx: &Context<'cx>,
+            r: &ReturnInOrder<i64>,
+            c1: &Counter,
+            c2: &Counter,
+        ) {
+            c1.add();
+            sign_of(cx, r.clone(), c2.clone());
         }
         log();
 
@@ -770,26 +376,28 @@ mod tests {
 
     #[test]
     fn conditional_query() {
-        define_query! {
-            #[rerun(generation)]
-            fn boolean_query<'cx>(_cx: &Context<'cx>, r: &ReturnInOrder<bool>) -> bool {
-                r.next()
-            }
+        #[query]
+        #[rerun(generation)]
+        fn boolean_query<'cx>(_cx: &Context<'cx>, r: &ReturnInOrder<bool>) -> bool {
+            r.next()
+        }
 
-            fn one<'cx>(_cx: &Context<'cx>) -> u64 {
-                1
-            }
-            fn two<'cx>(_cx: &Context<'cx>, c: &Counter) -> u64 {
-                c.add();
-                2
-            }
+        #[query]
+        fn one<'cx>(_cx: &Context<'cx>) -> u64 {
+            1
+        }
+        #[query]
+        fn two<'cx>(_cx: &Context<'cx>, c: &Counter) -> u64 {
+            c.add();
+            2
+        }
 
-            fn conditional<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<bool>, c: &Counter) -> u64 {
-                if *boolean_query(cx, r.clone()) {
-                    *one(cx)
-                } else {
-                    *two(cx, c.clone())
-                }
+        #[query]
+        fn conditional<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<bool>, c: &Counter) -> u64 {
+            if *boolean_query(cx, r.clone()) {
+                *one(cx)
+            } else {
+                *two(cx, c.clone())
             }
         }
 
@@ -812,10 +420,9 @@ mod tests {
     #[test]
     #[should_panic]
     fn cycle() {
-        define_query! {
-            fn cyclic<'cx>(cx: &Context<'cx>, r: &u64) -> bool {
-              *cyclic(cx, *r)
-            }
+        #[query]
+        fn cyclic<'cx>(cx: &Context<'cx>, r: &u64) -> bool {
+            *cyclic(cx, *r)
         }
 
         log();
@@ -828,26 +435,29 @@ mod tests {
     #[test]
     #[should_panic]
     fn long_cycle() {
-        define_query! {
-            fn e<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
-              *a(cx, *r)
-            }
+        #[query]
+        fn e<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
+            *a(cx, *r)
+        }
 
-            fn d<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
-              *e(cx, *r)
-            }
+        #[query]
+        fn d<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
+            *e(cx, *r)
+        }
 
-            fn c<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
-              *d(cx, *r)
-            }
+        #[query]
+        fn c<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
+            *d(cx, *r)
+        }
 
-            fn b<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
-              *c(cx, *r)
-            }
+        #[query]
+        fn b<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
+            *c(cx, *r)
+        }
 
-            fn a<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
-              *b(cx, *r)
-            }
+        #[query]
+        fn a<'cx>(cx: &Context<'cx, i64>, r: &u64) -> bool {
+            *b(cx, *r)
         }
         log();
 
@@ -859,24 +469,26 @@ mod tests {
 
     #[test]
     fn garbage_collect() {
-        define_query! {
-            fn value_dependent<'cx>(_cx: &Context<'cx>, r: &i64) -> i64 {
-                r * 2
-            }
+        #[query]
+        fn value_dependent<'cx>(_cx: &Context<'cx>, r: &i64) -> i64 {
+            r * 2
+        }
 
-            #[rerun(generation)]
-            fn intvalue<'cx>(_cx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
-                r.next()
-            }
+        #[query]
+        #[rerun(generation)]
+        fn intvalue<'cx>(_cx: &Context<'cx>, r: &ReturnInOrder<i64>) -> i64 {
+            r.next()
+        }
 
-            fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>) -> bool {
-                let v = intvalue(cx, r.clone());
-                value_dependent(cx, *v).is_positive()
-            }
+        #[query]
+        fn sign_of<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>) -> bool {
+            let v = intvalue(cx, r.clone());
+            value_dependent(cx, *v).is_positive()
+        }
 
-            fn some_other_query<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>)  {
-                sign_of(cx, r.clone());
-            }
+        #[query]
+        fn some_other_query<'cx>(cx: &Context<'cx>, r: &ReturnInOrder<i64>) {
+            sign_of(cx, r.clone());
         }
         log();
 
@@ -910,16 +522,16 @@ mod tests {
 
     #[test]
     fn impure_cache_rerun() {
-        define_query! {
-            #[rerun(always)]
-            fn random<'cx>(_cx: &Context<'cx>) -> u64 {
-                thread_rng().gen_range(0..u64::MAX)
-            }
+        #[query]
+        #[rerun(always)]
+        fn random<'cx>(_cx: &Context<'cx>) -> u64 {
+            thread_rng().gen_range(0..u64::MAX)
+        }
 
-            fn depends_on_impure<'cx>(cx: &Context<'cx>, inp: &Counter)  {
-                inp.add();
-                let _dep = random(&cx);
-            }
+        #[query]
+        fn depends_on_impure<'cx>(cx: &Context<'cx>, inp: &Counter) {
+            inp.add();
+            let _dep = random(&cx);
         }
 
         log();
@@ -939,18 +551,17 @@ mod tests {
 
     #[test]
     fn cache_off() {
-        define_query! {
-            /// Hello, this query is even documented!
-            #[inline(always)]
-            fn random<'cx>(_cx: &Context<'cx>,) -> u64 {
-                thread_rng().gen_range(0..u64::MAX)
-            }
+        /// Look! this query is even documented!
+        #[query]
+        #[inline(always)] // that's not rerun!
+        fn random<'cx>(_cx: &Context<'cx>) -> u64 {
+            thread_rng().gen_range(0..u64::MAX)
+        }
 
-            fn depends_on_impure<'cx>(cx: &Context<'cx>, inp: &Counter)  {
-                inp.add();
-                let _dep = random(cx);
-
-            }
+        #[query]
+        fn depends_on_impure<'cx>(cx: &Context<'cx>, inp: &Counter) {
+            inp.add();
+            let _dep = random(cx);
         }
 
         log();
